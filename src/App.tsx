@@ -220,7 +220,7 @@ export default function App() {
 
   return <div className="app">
     <aside className="sidebar">
-      <div className="brand"><div className="brand-icon">L</div><div><strong>LoopSite Studio</strong><small>Local Development Environment</small></div></div>
+      <div className="brand"><img className="brand-image" src="/loopsite-logo.png" alt="LoopSite Studio" /><div><strong>LoopSite Studio</strong><small>Local Development Environment</small></div></div>
       <nav>
         <button className={panel === "projects" ? "nav active" : "nav"} onClick={() => setPanel("projects")}>▦ <span>Projekte</span></button>
         <button className={panel === "routing" ? "nav active" : "nav"} onClick={() => setPanel("routing")}>◉ <span>Routing</span></button>
