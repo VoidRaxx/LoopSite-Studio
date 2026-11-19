@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
 export type LogTarget =
   | { kind: "php"; projectId: string; serverId: string; title: string }
@@ -63,7 +64,7 @@ export default function LogViewer({ target, onClose }: { target: LogTarget; onCl
 
   async function copy() {
     try {
-      await navigator.clipboard.writeText(raw);
+      await writeText(raw);
       setNotice("Log in Zwischenablage kopiert.");
       setError("");
     } catch (err) {

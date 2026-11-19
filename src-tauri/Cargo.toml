@@ -23,3 +23,5 @@ rusqlite = { version = "0.43.0", features = ["bundled"] }
 
 # Native TCP client, no shell process or external database CLI.
 mysql = { version = "28.0.4", default-features = false, features = ["minimal-rust"] }
+
+tauri-plugin-clipboard-manager = "2"
