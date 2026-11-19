@@ -19,10 +19,16 @@ jobs:
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev
+      - name: Validate desktop icons
+        run: python scripts/verify-icons.py
       - run: npm install
       - run: npm run build
       - run: cd src-tauri && cargo test
-      - run: npm run tauri build
+      - name: Build native installers
+        env:
+          CARGO_BUILD_JOBS: '2'
+          CARGO_INCREMENTAL: '0'
+        run: npm run tauri build
       - name: Upload experimental Windows installer
         if: runner.os == 'Windows' && success()
         uses: actions/upload-artifact@v4
