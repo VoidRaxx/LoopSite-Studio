@@ -85,7 +85,8 @@ fn run_php(
         .map_err(|e| format!("Log-Datei: {e}"))?;
     let stderr = stdout.try_clone().map_err(|e| e.to_string())?;
 
-    let mut command = Command::new(crate::executables::resolve("php")?);
+    let php_binary = crate::php::resolve_php(app, cfg.php_executable_path.as_deref())?;
+    let mut command = Command::new(php_binary);
     command.args(args).current_dir(root)
         .stdin(Stdio::null())
         .stdout(Stdio::from(stdout))

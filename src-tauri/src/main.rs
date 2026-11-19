@@ -5,6 +5,7 @@ mod servers;
 mod proxy;
 mod editor;
 mod executables;
+mod php;
 
 fn main() {
     let manager = servers::ServerManager::default();
@@ -26,7 +27,9 @@ fn main() {
             proxy::read_proxy_log,
             editor::list_project_directory,
             editor::read_project_file,
-            editor::save_project_file
+            editor::save_project_file,
+            php::list_php_runtimes,
+            php::register_php_runtime
         ])
         .on_window_event(|window, event| {
             if matches!(event, tauri::WindowEvent::Destroyed) {

@@ -12,6 +12,8 @@ pub struct ServerConfig {
     pub root_path: String,
     pub port: u16,
     pub runtime: String,
+    #[serde(default)]
+    pub php_executable_path: Option<String>,
     pub router_file: Option<String>,
     pub lan_access: bool,
 }
@@ -95,6 +97,12 @@ fn validate(projects: &[Project]) -> Result<(), String> {
             if !matches!(server.runtime.as_str(), "php" | "static" | "custom") {
                 return Err("Unbekannte Server-Runtime.".into());
             }
+            if let Some(ref executable) = server.php_executable_path {
+                if server.runtime != "php" || !std::path::Path::new(executable).is_absolute()
+                    || executable.trim().is_empty() || executable.contains(['\n', '\r', '\0']) {
+                    return Err("Ungültiger PHP-Pfad in der Serverkonfiguration.".into());
+                }
+            }
             if let Some(router) = &server.router_file {
                 if router.contains(['\n', '\r', '\0']) || router.trim().is_empty() {
                     return Err("Ungültige Router-Datei.".into());
@@ -167,7 +175,7 @@ mod tests {
             id: project_id.into(), name: "Example".into(), root_path: root_path.clone(),
             servers: vec![ServerConfig {
                 id: format!("server-{project_id}"), name: "Web".into(), root_path,
-                port, runtime: "php".into(), router_file: None, lan_access: false
+                port, runtime: "php".into(), php_executable_path: None, router_file: None, lan_access: false
             }],
             domains: vec![DomainRoute {
                 id: format!("domain-{project_id}"),
@@ -183,6 +191,26 @@ mod tests {
             fixture("p1", "one.localhost", 8000),
             fixture("p2", "two.localhost", 8001)
         ]).is_ok());
+    }
+
+    #[test]
+    fn legacy_server_config_defaults_to_automatic_php() {
+        let json = r#"{"id":"s1","name":"PHP","rootPath":"/tmp","port":8000,"runtime":"php","routerFile":null,"lanAccess":false}"#;
+        let config: ServerConfig = serde_json::from_str(json).unwrap();
+        assert!(config.php_executable_path.is_none());
+    }
+
+    #[test]
+    fn explicit_php_path_survives_roundtrip() {
+        let mut project = fixture("p1", "demo.localhost", 8000);
+        #[cfg(windows)]
+        let path = r"C:\php\php.exe";
+        #[cfg(not(windows))]
+        let path = "/usr/bin/php8.4";
+        project.servers[0].php_executable_path = Some(path.into());
+        let encoded = serde_json::to_string(&project).unwrap();
+        let restored: Project = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(restored.servers[0].php_executable_path.as_deref(), Some(path));
     }
 
     #[test]

@@ -6,6 +6,7 @@ export interface ServerConfig {
   rootPath: string;
   port: number;
   runtime: Runtime;
+  phpExecutablePath?: string | null;
   routerFile: string | null;
   lanAccess: boolean;
 }

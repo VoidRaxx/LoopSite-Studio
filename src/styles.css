@@ -38,3 +38,5 @@
 .editor-placeholder p,.editor-footnote{color:var(--muted);font-size:12px;line-height:1.6}
 .editor-footnote{margin:14px 0}
 @media(max-width:850px){.editor-layout{grid-template-columns:180px minmax(0,1fr)}.editor-project-choice{min-width:120px}}
+
+.php-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.php-actions .primary,.php-actions .secondary{white-space:nowrap}.item-card .status{white-space:nowrap}.field-row select.grow{flex:1;min-width:0}
