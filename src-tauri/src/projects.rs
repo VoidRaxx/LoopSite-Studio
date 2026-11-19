@@ -160,4 +160,68 @@ mod tests {
         assert!(!valid_hostname("-bad.localhost"));
         assert!(!valid_hostname("bad.localhost:8000"));
     }
+
+    fn fixture(project_id: &str, hostname: &str, port: u16) -> Project {
+        let root_path = std::env::temp_dir().to_string_lossy().to_string();
+        Project {
+            id: project_id.into(), name: "Example".into(), root_path: root_path.clone(),
+            servers: vec![ServerConfig {
+                id: format!("server-{project_id}"), name: "Web".into(), root_path,
+                port, runtime: "php".into(), router_file: None, lan_access: false
+            }],
+            domains: vec![DomainRoute {
+                id: format!("domain-{project_id}"),
+                hostname: hostname.into(),
+                server_id: format!("server-{project_id}"), https: false
+            }],
+        }
+    }
+
+    #[test]
+    fn separate_projects_can_have_separate_servers() {
+        assert!(validate(&[
+            fixture("p1", "one.localhost", 8000),
+            fixture("p2", "two.localhost", 8001)
+        ]).is_ok());
+    }
+
+    #[test]
+    fn duplicate_port_across_projects_rejected() {
+        assert!(validate(&[
+            fixture("p1", "one.localhost", 8000),
+            fixture("p2", "two.localhost", 8000)
+        ]).is_err());
+    }
+
+    #[test]
+    fn duplicate_domain_across_projects_rejected() {
+        assert!(validate(&[
+            fixture("p1", "same.localhost", 8000),
+            fixture("p2", "same.localhost", 8001)
+        ]).is_err());
+    }
+
+    #[test]
+    fn multiple_hosts_can_point_to_one_server() {
+        let mut project = fixture("p1", "main.localhost", 8000);
+        project.domains.push(DomainRoute {
+            id: "domain2".into(), hostname: "api.main.localhost".into(),
+            server_id: "server-p1".into(), https: false
+        });
+        assert!(validate(&[project]).is_ok());
+    }
+
+    #[test]
+    fn invalid_references_rejected() {
+        let mut project = fixture("p1", "main.localhost", 8000);
+        project.domains[0].server_id = "missing-server".into();
+        assert!(validate(&[project]).is_err());
+    }
+
+    #[test]
+    fn project_id_must_not_be_a_path() {
+        let project = fixture("../escape", "main.localhost", 8000);
+        assert!(validate(&[project]).is_err());
+    }
+
 }

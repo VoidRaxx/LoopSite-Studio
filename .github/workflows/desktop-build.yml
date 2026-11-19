@@ -23,3 +23,24 @@ jobs:
       - run: npm run build
       - run: cd src-tauri && cargo test
       - run: npm run tauri build
+      - name: Upload experimental Windows installer
+        if: runner.os == 'Windows' && success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: loopsite-windows-experimental
+          path: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/msi/*.msi
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Upload experimental Linux packages
+        if: runner.os == 'Linux' && success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: loopsite-linux-experimental
+          path: |
+            src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/rpm/*.rpm
+          if-no-files-found: warn
+          retention-days: 14
