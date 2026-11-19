@@ -26,6 +26,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev mariadb-client
       - name: Validate desktop icons
         run: python scripts/verify-icons.py
+      - name: Validate palette consistency and contrast
+        run: python scripts/verify-themes.py
       - run: npm install
       - run: npm run build
       - name: Set up PHP 8.4 for Windows router smoke test
