@@ -26,6 +26,7 @@ export default function DatabasePanel({ project, projects, onSelectProject }: Pr
   const [showInsert, setShowInsert] = useState(false);
   const [editingRow, setEditingRow] = useState<number | null>(null);
   const [editValues, setEditValues] = useState<Record<string, string>>({});
+  const [originalEditValues, setOriginalEditValues] = useState<Record<string, string>>({});
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmDeleteName, setConfirmDeleteName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -202,7 +203,7 @@ export default function DatabasePanel({ project, projects, onSelectProject }: Pr
       if (!column.primaryKey) next[column.name] = row[index] == null ? "" : String(row[index]);
     });
     setEditingRow(row[idIndex] as number);
-    setEditValues(next); setShowInsert(false); setError("");
+    setEditValues(next); setOriginalEditValues(next); setShowInsert(false); setError("");
   }
 
   async function saveEditedRow(event: FormEvent) {
@@ -210,9 +211,10 @@ export default function DatabasePanel({ project, projects, onSelectProject }: Pr
     if (busy || !projectId || !database || !table || !tableData || editingRow === null) return;
     setBusy(true); setError("");
     try {
-      const values = tableData.columns.filter(c => !c.primaryKey).map(c => ({
+      const values = tableData.columns.filter(c => !c.primaryKey && editValues[c.name] !== originalEditValues[c.name]).map(c => ({
         name: c.name, value: editValues[c.name] === "" && !c.notNull ? null : (editValues[c.name] ?? "")
       }));
+      if (values.length === 0) { setEditingRow(null); return; }
       await invoke("update_sqlite_row",{ projectId, database, table, id: editingRow, values });
       setEditingRow(null);
       await refreshRows();
@@ -334,7 +336,7 @@ export default function DatabasePanel({ project, projects, onSelectProject }: Pr
                 </label>)}</div>
               <div className="db-controls">
                 <button type="button" className="secondary" onClick={() => setEditingRow(null)}>Abbrechen</button>
-                <button type="submit" className="primary" disabled={busy}>Änderungen speichern</button>
+                <button type="submit" className="primary" disabled={busy || Object.keys(editValues).every(k => editValues[k] === originalEditValues[k])}>Änderungen speichern</button>
               </div>
             </form>}
             {tableData ? <div className="db-scroll"><table className="db-data">

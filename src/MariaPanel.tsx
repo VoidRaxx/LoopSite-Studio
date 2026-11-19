@@ -22,7 +22,7 @@ export default function MariaPanel() {
   const [showCreateTable, setShowCreateTable] = useState(false);
   const [deleteName, setDeleteName] = useState("");
   const [showDelete, setShowDelete] = useState(false);
-  const [edit, setEdit] = useState<{keyValue:string;column:string;value:string}|null>(null);
+  const [edit, setEdit] = useState<{keyValue:string;column:string;value:string;original:string}|null>(null);
   const [service, setService] = useState("MariaDB");
   const [preview, setPreview] = useState<Preview | null>(null);
   const [busy, setBusy] = useState(false);
@@ -156,7 +156,7 @@ export default function MariaPanel() {
   }
   async function saveEdit(e:FormEvent){
     e.preventDefault();
-    if(busy || !edit || !database || !table) return;
+    if(busy || !edit || edit.value === edit.original || !database || !table) return;
     setBusy(true);setError("");setNotice("");
     try {
       await invoke("maria_update_cell",{database,table,keyValue:edit.keyValue,
@@ -263,7 +263,7 @@ export default function MariaPanel() {
                 <input value={edit.value} maxLength={16384} onChange={e=>setEdit(v=>v?{...v,value:e.target.value}:v)}/>
               </label>
               <div className="db-controls"><button type="button" className="secondary" onClick={()=>setEdit(null)}>Abbrechen</button>
-                <button type="submit" className="primary" disabled={busy}>Wert speichern</button></div>
+                <button type="submit" className="primary" disabled={busy || !edit || edit.value===edit.original}>Wert speichern</button></div>
             </form>}
             {preview?<div className="db-scroll"><table className="db-data">
               <thead><tr>{preview.columns.map(c=><th key={c}>{c}</th>)}</tr></thead>
@@ -272,7 +272,8 @@ export default function MariaPanel() {
                 {preview.primaryKey && preview.columns[j]!==preview.primaryKey && row[preview.columns.indexOf(preview.primaryKey)]!==null &&
                 <button className="db-cell-edit" disabled={busy} title={"Zelle "+preview.columns[j]+" bearbeiten"} onClick={()=>{
                   const key=row[preview.columns.indexOf(preview.primaryKey!)];
-                  setEdit({keyValue:String(key),column:preview.columns[j],value:v===null?"":String(v)});
+                  const original=v===null?"":String(v);
+                  setEdit({keyValue:String(key),column:preview.columns[j],value:original.endsWith("…")?"":original,original});
                 }}>✎</button>}</td>)}</tr>)}</tbody>
             </table>{preview.rows.length===0&&<p className="empty-list">Die Tabelle ist leer.</p>}</div>:<p className="db-muted">Tabellendaten werden geladen …</p>}
             {preview?.truncated&&<p className="db-muted">Es werden nur die ersten 100 Zeilen angezeigt.</p>}

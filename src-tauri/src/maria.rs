@@ -250,8 +250,8 @@ fn projection(columns:&[(String,String)])->Result<String,String>{
 fn value_json(v:Value)->serde_json::Value{
     match v{
         Value::NULL=>serde_json::Value::Null,
-        Value::Int(x)=>serde_json::json!(x),
-        Value::UInt(x)=>serde_json::json!(x),
+        Value::Int(x)=>if x.unsigned_abs()>9_007_199_254_740_991 {serde_json::json!(x.to_string())} else {serde_json::json!(x)},
+        Value::UInt(x)=>if x>9_007_199_254_740_991 {serde_json::json!(x.to_string())} else {serde_json::json!(x)},
         Value::Float(x)=>serde_json::json!(x),
         Value::Double(x)=>serde_json::json!(x),
         Value::Bytes(bytes)=>match std::str::from_utf8(&bytes){
