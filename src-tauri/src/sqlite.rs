@@ -147,6 +147,87 @@ pub fn list_sqlite_databases(app: AppHandle, project_id: String) -> Result<Vec<D
     Ok(found)
 }
 
+
+const MAX_BACKUP_SOURCE_BYTES: u64 = 512 * 1024 * 1024;
+
+fn consistent_copy(source: &Path, destination: &Path) -> Result<(), String> {
+    let meta = fs::symlink_metadata(source).map_err(|e| format!("Quelldatenbank nicht gefunden: {e}"))?;
+    if !meta.file_type().is_file() || meta.file_type().is_symlink()
+        || meta.len() == 0 || meta.len() > MAX_BACKUP_SOURCE_BYTES {
+        return Err("Die Quelle muss eine reguläre SQLite-Datei von maximal 512 MiB sein.".into());
+    }
+    // Nonexistent target: fail rather than overwrite another backup or project database.
+    // Reservation also rejects a pre-existing symlink at the destination path.
+    if !destination.extension().and_then(|ext| ext.to_str()).is_some_and(|ext| ext.eq_ignore_ascii_case("sqlite3")) {
+        return Err("Zieldatei muss auf .sqlite3 enden.".into());
+    }
+    let source_connection = Connection::open_with_flags(source, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|e| format!("Quelldatenbank konnte nicht geöffnet werden: {e}"))?;
+    source_connection.busy_timeout(std::time::Duration::from_secs(3)).map_err(|e| e.to_string())?;
+    let integrity: String = source_connection.query_row("PRAGMA quick_check", [], |row| row.get(0))
+        .map_err(|e| format!("SQLite-Prüfung fehlgeschlagen: {e}"))?;
+    if integrity != "ok" {
+        return Err("Die SQLite-Datenbank ist beschädigt; Import/Sicherung abgebrochen.".into());
+    }
+
+    let reservation = OpenOptions::new().write(true).create_new(true).open(destination)
+        .map_err(|e| format!("Die Zieldatei existiert bereits oder ist nicht beschreibbar: {e}"))?;
+    drop(reservation);
+
+    let result = (|| -> Result<(), String> {
+        // SQLite creates a consistent snapshot, including pending WAL changes.
+        source_connection.execute("VACUUM INTO ?1", [destination.to_string_lossy().as_ref()])
+            .map_err(|e| format!("SQLite-Sicherung fehlgeschlagen: {e}"))?;
+        let target = Connection::open_with_flags(destination, OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(|e| e.to_string())?;
+        let check: String = target.query_row("PRAGMA quick_check", [], |row| row.get(0))
+            .map_err(|e| e.to_string())?;
+        if check != "ok" {
+            return Err("Die neue Sicherung hat die Integritätsprüfung nicht bestanden.".into());
+        }
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(destination);
+    }
+    result
+}
+
+fn import_in_dir(dir: &Path, name: &str, source: &Path) -> Result<DatabaseInfo, String> {
+    let destination = database_path(dir, name)?;
+    fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    consistent_copy(source, &destination)?;
+    let size = fs::metadata(&destination).map_err(|e| e.to_string())?.len();
+    Ok(DatabaseInfo {
+        name: name.to_string(),
+        path: destination.to_string_lossy().into_owned(),
+        size_bytes: size,
+    })
+}
+
+#[tauri::command]
+pub fn import_sqlite_database(
+    app: AppHandle,
+    project_id: String,
+    name: String,
+    source: String,
+) -> Result<DatabaseInfo, String> {
+    let dir = database_dir(&app, &project_id)?;
+    import_in_dir(&dir, &name, Path::new(&source))
+}
+
+#[tauri::command]
+pub fn export_sqlite_database(
+    app: AppHandle,
+    project_id: String,
+    database: String,
+    destination: String,
+) -> Result<(), String> {
+    let dir = database_dir(&app, &project_id)?;
+    let source = database_path(&dir, &database)?;
+    consistent_copy(&source, Path::new(&destination))
+}
+
 fn create_table_in_dir(dir:&Path,db:&str,table:&str,columns:&[NewColumn]) -> Result<(),String> {
     if !identifier(table) || table.starts_with("sqlite_") {return Err("Ungültiger Tabellenname.".into())}
     if columns.is_empty() || columns.len()>MAX_COLUMNS {return Err("Bitte 1 bis 24 Spalten angeben.".into())}
@@ -332,4 +413,39 @@ mod tests {
         assert!(insert_in_dir(&dir,"tests","safe",&[InsertValue{name:"required".into(),value:None}]).is_err());
         fs::remove_dir_all(dir).unwrap();
     }
+    #[test]
+    fn sqlite_snapshot_roundtrip_and_no_overwrite() {
+        let dir = temp();
+        create_db_in_dir(&dir, "source").unwrap();
+        create_table_in_dir(&dir,"source","items",&[
+            NewColumn{name:"title".into(),data_type:"TEXT".into(),not_null:true},
+        ]).unwrap();
+        insert_in_dir(&dir,"source","items",&[
+            InsertValue{name:"title".into(),value:Some("Persisted".into())},
+        ]).unwrap();
+        let external = dir.join("backup.sqlite3");
+        consistent_copy(&dir.join("source.sqlite3"), &external).unwrap();
+        assert!(consistent_copy(&dir.join("source.sqlite3"), &external).is_err());
+        let imported_dir = temp();
+        let imported = import_in_dir(&imported_dir,"imported",&external).unwrap();
+        assert!(Path::new(&imported.path).exists());
+        assert_eq!(read_table_in_dir(&imported_dir,"imported","items").unwrap().rows[0][1],"Persisted");
+        assert!(import_in_dir(&imported_dir,"imported",&external).is_err());
+        fs::remove_dir_all(dir).unwrap();
+        fs::remove_dir_all(imported_dir).unwrap();
+    }
+
+    #[test]
+    fn sqlite_import_rejects_invalid_source_and_keeps_destination_clean() {
+        let dir = temp();
+        let invalid = dir.join("invalid.sqlite3");
+        fs::write(&invalid,b"this is not a SQLite database").unwrap();
+        let imported_dir = temp();
+        assert!(import_in_dir(&imported_dir,"invalid",&invalid).is_err());
+        assert!(!imported_dir.join("invalid.sqlite3").exists());
+        assert!(import_in_dir(&imported_dir,"../unsafe",&invalid).is_err());
+        fs::remove_dir_all(dir).unwrap();
+        fs::remove_dir_all(imported_dir).unwrap();
+    }
+
 }

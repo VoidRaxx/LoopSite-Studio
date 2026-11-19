@@ -39,6 +39,8 @@ fn main() {
             sqlite::list_sqlite_tables,
             sqlite::read_sqlite_table,
             sqlite::insert_sqlite_row,
+            sqlite::import_sqlite_database,
+            sqlite::export_sqlite_database,
             maria::maria_connect,
             maria::maria_status,
             maria::maria_disconnect,

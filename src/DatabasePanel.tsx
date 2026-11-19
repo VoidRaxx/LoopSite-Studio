@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import type { Project } from "./types";
 
 type DatabaseInfo = { name: string; path: string; sizeBytes: number };
@@ -17,6 +18,7 @@ export default function DatabasePanel({ project, projects, onSelectProject }: Pr
   const [table, setTable] = useState("");
   const [tableData, setTableData] = useState<TableData | null>(null);
   const [newDbName, setNewDbName] = useState("");
+  const [importName, setImportName] = useState("");
   const [newTableName, setNewTableName] = useState("");
   const [columns, setColumns] = useState<NewColumn[]>([{ name: "title", dataType: "TEXT", notNull: true }]);
   const [insertValues, setInsertValues] = useState<Record<string, string>>({});
@@ -96,6 +98,46 @@ export default function DatabasePanel({ project, projects, onSelectProject }: Pr
     } catch(e) {setError(String(e));}
     finally {setBusy(false);}
   }
+
+  async function importDatabase() {
+    if (!projectId || busy || !importName.trim()) {
+      setError("Bitte zuerst einen Namen für die importierte Datenbank eingeben."); return;
+    }
+    setError(""); setNotice("");
+    try {
+      const source = await open({
+        multiple: false,
+        directory: false,
+        title: "SQLite-Datenbank importieren",
+        filters: [{ name: "SQLite", extensions: ["sqlite3", "sqlite", "db"] }],
+      });
+      if (typeof source !== "string") return;
+      setBusy(true);
+      const result = await invoke<DatabaseInfo>("import_sqlite_database", {
+        projectId, name: importName.trim(), source
+      });
+      await refreshDatabases(result.name);
+      setImportName("");
+      setNotice("Datenbank wurde als eigenständige Kopie importiert.");
+    } catch (e) { setError("Import fehlgeschlagen: " + String(e)); }
+    finally { setBusy(false); }
+  }
+  async function exportDatabase() {
+    if (!projectId || !database || busy) return;
+    setError(""); setNotice("");
+    try {
+      const destination = await save({
+        title: "SQLite-Sicherung speichern",
+        defaultPath: database + ".sqlite3",
+        filters: [{ name: "SQLite", extensions: ["sqlite3"] }],
+      });
+      if (typeof destination !== "string") return;
+      setBusy(true);
+      await invoke("export_sqlite_database", { projectId, database, destination });
+      setNotice("SQLite-Sicherung erstellt: " + destination);
+    } catch (e) { setError("Export fehlgeschlagen: " + String(e)); }
+    finally { setBusy(false); }
+  }
   async function createTable(event: FormEvent) {
     event.preventDefault();
     if (!projectId || !database || busy) return;
@@ -152,13 +194,24 @@ export default function DatabasePanel({ project, projects, onSelectProject }: Pr
             placeholder="z. B. webshop" required maxLength={48} pattern="[A-Za-z][A-Za-z0-9_-]*"/></label>
           <button className="primary" disabled={busy} type="submit">+ Datenbank erstellen</button>
         </form>
+        <div className="db-new">
+          <label>Bestehende SQLite-Datei importieren
+            <input value={importName} onChange={e=>setImportName(e.target.value)}
+              placeholder="Name der importierten Datenbank" maxLength={48}
+              pattern="[A-Za-z][A-Za-z0-9_-]*" />
+          </label>
+          <button className="secondary" type="button" disabled={busy || !importName.trim()}
+            onClick={() => void importDatabase()}>SQLite-Datei auswählen …</button>
+          <p className="db-muted">Es wird eine geprüfte Kopie angelegt; bestehende Datenbanken werden nicht überschrieben.</p>
+        </div>
       </aside>
       <div className="db-work">
         {currentDb ? <>
           <div className="db-top">
             <div><p className="eyebrow">SQLITE DATABASE</p><h2>{currentDb.name}</h2>
               <p className="db-file-path" title={currentDb.path}>{currentDb.path}</p></div>
-            <button className="secondary" disabled={busy} onClick={() => void refreshAll()}>Aktualisieren</button>
+            <div className="db-controls"><button className="secondary" disabled={busy} onClick={() => void exportDatabase()}>Sicherung exportieren</button>
+            <button className="secondary" disabled={busy} onClick={() => void refreshAll()}>Aktualisieren</button></div>
           </div>
           <div className="section-head">
             <div><h3>Tabellen</h3><p>Wähle eine Tabelle zum Anzeigen und Einfügen von Datensätzen.</p></div>

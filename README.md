@@ -31,7 +31,7 @@ Early development. **No stable production release yet.** Desktop build artifacts
 - Local HTTP domain routing through an externally installed Caddy executable
 - Offline Monaco file editor: browsing, tabs, syntax highlighting, search, replace and guarded saves
 - HybrideUniverse / Dark / White themes
-- Native SQLite database manager: create project databases and tables, preview data, and insert rows
+- Native SQLite database manager: create project databases and tables, preview/insert rows, and import/export consistent `.sqlite3` files
 - Connect to existing local MariaDB/MySQL servers, create databases and preview tables (experimental)
 
 ### Not implemented yet
