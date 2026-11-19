@@ -1,0 +1,28 @@
+export type Runtime = "php" | "static" | "custom";
+
+export interface ServerConfig {
+  id: string;
+  name: string;
+  rootPath: string;
+  port: number;
+  runtime: Runtime;
+  routerFile: string | null;
+  lanAccess: boolean;
+}
+
+export interface DomainRoute {
+  id: string;
+  hostname: string;
+  serverId: string;
+  https: boolean;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  rootPath: string;
+  servers: ServerConfig[];
+  domains: DomainRoute[];
+}
+
+export type Theme = "hu" | "dark" | "white";
