@@ -427,7 +427,7 @@ mod tests {
         let args = php_server_args(&root, Some("src/router.php"), addr).unwrap();
         assert_eq!(args[0], "-S");
         assert_eq!(args[2], "-t");
-        assert_eq!(args[4], php_argument_path(Path::new("src/router.php")));
+        assert_eq!(args[4].replace('\\', "/"), "src/router.php");
         assert!(!args[4].starts_with(r"\\?\"));
         assert!(php_server_args(&root, Some("readme.txt"), addr).is_err());
         assert!(php_server_args(&root, Some("not-found.php"), addr).is_err());
