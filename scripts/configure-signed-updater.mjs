@@ -3,14 +3,25 @@
 // Never print or store private signing keys in the source tree.
 import { readFileSync, writeFileSync } from "node:fs";
 
-const pubkey = process.env.LOOPSITE_UPDATER_PUBLIC_KEY?.trim();
+const providedKey = process.env.LOOPSITE_UPDATER_PUBLIC_KEY?.trim();
 const privateKey = process.env.TAURI_SIGNING_PRIVATE_KEY?.trim();
-if (!pubkey || !privateKey) {
+if (!providedKey || !privateKey) {
   console.error("Missing release signing secrets. Refusing to build an unsigned updater release.");
   process.exit(1);
 }
-if (!pubkey.startsWith("untrusted comment:") || !pubkey.includes("\nRW")) {
-  console.error("LOOPSITE_UPDATER_PUBLIC_KEY must contain the complete minisign public key content.");
+// The Tauri CLI uses the minisign public-key format. Accept a complete text
+// key or its base64-encoded representation; always embed the decoded text.
+const pubkey = (providedKey.startsWith("untrusted comment:")
+  ? providedKey
+  : Buffer.from(providedKey, "base64").toString("utf8")
+).replace(/\r\n/g, "\n").trim();
+const keyLines = pubkey.split("\n");
+const encodedKey = keyLines[1] ?? "";
+if (keyLines.length !== 2 ||
+    !keyLines[0].startsWith("untrusted comment:") ||
+    !/^RW[A-Za-z0-9+/=]{54}$/.test(encodedKey) ||
+    Buffer.from(encodedKey, "base64").length !== 42) {
+  console.error("LOOPSITE_UPDATER_PUBLIC_KEY is not a complete valid-format minisign public key.");
   process.exit(1);
 }
 const path = "src-tauri/tauri.conf.json";

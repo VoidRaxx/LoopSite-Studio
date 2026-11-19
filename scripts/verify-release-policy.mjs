@@ -16,6 +16,9 @@ assert.ok(!/actions\/upload-artifact@/.test(ci),"CI must not upload downloadable
 assert.match(release,/workflow_dispatch:/,"Release workflow must require manual dispatch");
 assert.ok(!/^\s+push:\s*$/m.test(release),"Release must not auto-publish on push");
 assert.match(release,/APPROVE LOOPSITE RELEASE/,"Release requires explicit approval");
+assert.match(release,/Create the exact approved release tag/,"Approved workflow must create its own release tag");
+assert.match(release,/gh api -X POST "repos\/\$GITHUB_REPOSITORY\/git\/refs"/,"Release tag creation must use the approved commit");
+assert.match(release,/refs\/heads\/main/,"Official releases must originate from main");
 assert.match(release,/release-approval/,"Approval environment is required");
 assert.match(release,/release-notes\/\$RELEASE_TAG\.md/,"English changelog is mandatory");
 assert.match(release,/--prerelease/,"Experimental tags must publish as GitHub prereleases");

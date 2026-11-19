@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing reviewed tag, for example v0.2.0-experimental.1"
+        description: "Approved version tag, for example v0.2.0-experimental.1 (created automatically)"
         required: true
         type: string
       approval:
@@ -21,8 +21,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag }}
-      - name: Verify approval, signed tag, version and English changelog
+          ref: main
+      - name: Verify approval, version and English changelog
         id: validate
         env:
           REVIEW_APPROVAL: ${{ inputs.approval }}
@@ -42,6 +42,38 @@ jobs:
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
           else
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Create the exact approved release tag
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "Official releases must be started from the main branch."
+            exit 1
+          fi
+          target="$(git rev-parse HEAD)"
+          if [[ "$target" != "$GITHUB_SHA" ]]; then
+            echo "Main advanced after approval. Review the current changelog and rerun."
+            exit 1
+          fi
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "This release has already been published or drafted; refusing to replace it."
+            exit 1
+          fi
+          existing="$(git ls-remote --tags origin "refs/tags/$RELEASE_TAG" | awk '{print $1}')"
+          if [[ -n "$existing" ]]; then
+            if [[ "$existing" != "$target" ]]; then
+              echo "Existing tag points to a different revision; refusing to change it."
+              exit 1
+            fi
+            echo "Approved tag already exists at the correct revision."
+          else
+            gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$target" >/dev/null
+            echo "Approved tag created from main."
           fi
 
   build:

@@ -1,86 +1,61 @@
-# Signed automatic updates (Tauri 2)
+# Signed updates and releases (Tauri 2)
 
-LoopSite Studio checks for published, stable updates on **every application start**, without blocking project loading.
+LoopSite Studio checks the official GitHub Releases API on application startup without blocking project loading. It shows the full English changelog before asking the user to choose **Update**, **Later**, or **Skip Update**. Installation always requires an explicit choice; nothing is installed silently.
 
-## UX
+## Update channels
 
-When a new GitHub Release with a higher semantic version exists, LoopSite opens a modal **before** any installation:
+- **Stable** releases use tags such as `v1.0.0` and are not marked as prereleases.
+- **Experimental** releases use tags such as `v0.2.0-experimental.1` and are official GitHub *prereleases*.
+- Stable installations **ignore experimental releases by default**. Settings can enable experimental release discovery.
+- Experimental installations always check for newer experimental releases; their experimental-update toggle is enabled and disabled.
+- Feature releases use the `<!-- loopsite-update:feature -->` marker. Only a deliberate `<!-- loopsite-update:security -->` marker categorizes a security update.
 
-- Version, date, changenotes and update category
-- **Update** — download and install the selected **signed** package, then restart
-- **Later** — close for this session; show again on next launch
-- **Skip Update** — ignore this exact version; a newer release will be offered normally
+## Update installation security
 
-The manual **Jetzt nach Updates suchen** button is in Einstellungen. If there is no published release yet, the checker remains quiet on startup. Startup checks are disabled in the Vite development environment.
+Tauri requires signed updater bundles and a matching embedded public key. Signing cannot be turned off for self-installation. Private signing keys are never committed to the repository. Only approved release jobs use those secrets. See [Tauri's official updater documentation](https://v2.tauri.app/plugin/updater/).
 
-A security update must be **explicitly marked** in the GitHub release description:
+- Signed Windows NSIS installations support in-app updates after confirmation.
+- Signed Linux AppImage installations can support in-app updates.
+- Portable builds and Linux `.deb`, `.rpm`, and Arch `.pkg.tar.zst` installations do not self-install updates: they open the official release page and use manual/package-manager installation.
+- In-app update installation is blocked when there are unsaved editor changes. Running local servers produce a warning before restarting.
 
-\`\`\`markdown
-<!-- loopsite-update:security -->
+The manifest file `latest.json` is generated from the *exact signed bundles* and their `.sig` files, with platform-specific download URLs.
 
-## Security
-- Fixed ...
-\`\`\`
+## One-time signing setup
 
-Other releases (including those without the marker) are **Feature-Updates**. Security updates have a prominent warning but are not force-installed. The user always keeps the requested three choices.
+Generate an Ed25519/minisign key pair with the Tauri CLI:
 
-The UI displays GitHub release notes as **plain text**, not unsafe HTML. Installation is blocked if the editor contains unsaved changes. Running local servers are warned about before an update restarts the app.
+```bash
+mkdir -p ~/.tauri
+npx --yes @tauri-apps/cli@2 signer generate --write-keys "$HOME/.tauri/loopsite-studio.key"
+```
 
-## Current state
+Back up `loopsite-studio.key` and its password securely. Do **not** publish or paste the private key into issues or conversations. The `.pub` file may be shared.
 
-**Important:** Experimental GitHub Actions artifacts are **not** signed releases. They can search for updates and show notes, but the action is labeled **Update herunterladen** and opens the project's official GitHub Release page for manual download. There is no unsafe direct self-installation of unsigned files.
+Add these **repository** secrets under GitHub **Settings → Secrets and variables → Actions**:
 
-In-app installation is enabled **only** for builds created by the signed release workflow, which:
-1. Embeds the trusted updater public key in Tauri's configuration.
-2. Enables the updater plugin only in the signed build.
-3. Produces signed NSIS Windows and Linux AppImage updater assets.
-4. Creates \`latest.json\` with exact URLs and the generated signature contents.
-5. Uploads the assets to a draft GitHub Release, then publishes it.
-6. Downloads and verifies signatures on the client before installation.
+| Secret | Meaning |
+| --- | --- |
+| `TAURI_SIGNING_PRIVATE_KEY` | Full private key contents |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Private key encryption password (if set) |
+| `LOOPSITE_UPDATER_PUBLIC_KEY` | Full `.key.pub` text |
 
-Only **Windows x86_64 (NSIS)** and **Linux x86_64 (AppImage)** are supported by the signed release workflow at this point. Distribution builds installed through a package manager, such as \`.deb\`, may require updating through the same package manager instead.
+The release build uses the public key for verification and the private key for signing. The workflow refuses to sign with missing secrets.
 
-## One-time maintainer setup (required before the first self-installing release)
+## Approving and publishing a release
 
-Generate the keys **locally** in a secure environment, for example:
+1. Update the version in `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json`.
+2. Add and review `release-notes/vX.Y.Z[-experimental.N].md`, with the categories `Added`, `Changed`, `Fixed`, `Security`, and `Known Issues`.
+3. Obtain explicit maintainer approval of this exact version and English changelog.
+4. Make sure that the normal **Desktop build checks** and **Arch Linux package validation** workflows pass on `main`. These checks do *not* publish downloadable installers.
+5. Open **GitHub → Actions → Approved official release → Run workflow**. Select branch `main`, enter the approved version tag, and enter `APPROVE LOOPSITE RELEASE` in the approval field.
+6. The workflow verifies that the version/changelog are on the approved commit, creates the matching Git tag automatically if it does not yet exist, and builds both Windows variants, DEB/RPM, portable AppImage, and the Arch package. Signed NSIS/AppImage assets are generated and checked.
+7. If any job fails, **nothing is publicly released**. If all jobs succeed, the release is published as a stable GitHub release or an experimental prerelease with the approved changelog.
 
-\`\`\`bash
-npm install
-npm run tauri signer generate -- -w "$HOME/.tauri/loopsite-studio.key"
-\`\`\`
+To add an extra approval step, configure the GitHub Actions `release-approval` environment with required reviewers. Without environment protection, **the explicit manual dispatch and approval input are the only human safeguards**.
 
-Keep the private \`.key\` file and its password securely backed up. **Never commit or share the private key.** The companion \`.key.pub\` is public.
+## Limitations
 
-In the GitHub repository's **Settings → Secrets and variables → Actions**, create:
+Package compilation checks are not a substitute for GUI and installation smoke testing on actual operating systems. Experimental releases are for evaluation only. No claim of full production readiness or accessibility compliance is made.
 
-- \`TAURI_SIGNING_PRIVATE_KEY\`: contents of the private key
-- \`TAURI_SIGNING_PRIVATE_KEY_PASSWORD\`: its password, if set
-- \`LOOPSITE_UPDATER_PUBLIC_KEY\`: entire \`.key.pub\` text, including the comment line
-
-The signing key is critical. If lost, future releases cannot update already-installed signed versions through that key.
-
-## Publishing a new version
-
-1. Update the app version consistently in \`package.json\`, \`src-tauri/Cargo.toml\` and \`src-tauri/tauri.conf.json\`.
-2. Optionally add \`release-notes/vX.Y.Z.md\` with the changenotes and security marker if applicable. Otherwise GitHub auto-generates notes.
-3. Push a Git tag \`vX.Y.Z\` pointing at the version commit. The \`Signed desktop release\` GitHub workflow only runs for such tags.
-4. CI verifies the tag matches the app version and that signing secrets are present. Missing secrets block release creation.
-5. After both platforms build and sign successfully, CI publishes a GitHub Release containing the signed binaries, \`.sig\` files and \`latest.json\`.
-6. Newer signed versions will be offered at the next launch.
-
-**Do not publish an unsigned release with a higher version through the official release channel.** The UI could discover it, but Tauri's signed updater would reject installation.
-
-## Security boundaries
-
-- No automatic installation without displaying notes and a user choice.
-- The frontend checks only the official GitHub repository's latest stable release.
-- The native updater accepts only HTTPS endpoint metadata, a trusted embedded public key and valid signed bundles.
-- Build-time private keys are supplied by GitHub Actions secrets, never stored in application binaries or Git.
-- No automatic retries of a failed installation.
-- Only the chosen version is installed; a mismatch between displayed release and signed updater version aborts the operation.
-
-This is an early alpha implementation. Real signed release smoke tests on Windows and Linux are required before declaring the update system production-ready.
-
-## Release control
-
-Normal build validation does not upload downloadable installers. Release publication requires manual dispatch, a matching English changelog, successful Windows/Linux/Arch packaging, signing secrets and explicit approval. For all supported formats and portable storage rules see [Release policy](release-policy.md).
+The code and release policy are detailed in [Release policy](release-policy.md).
