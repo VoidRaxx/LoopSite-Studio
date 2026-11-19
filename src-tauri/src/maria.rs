@@ -230,6 +230,75 @@ pub fn maria_update_cell(
     })
 }
 
+
+#[derive(Serialize)]
+#[serde(rename_all="camelCase")]
+pub struct MariaEditableColumn {
+    name:String,
+    data_type:String,
+    not_null:bool,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all="camelCase")]
+pub struct MariaInsertValue {
+    name:String,
+    value:Option<String>,
+}
+
+fn column_definitions(conn:&mut Conn, db:&str, table:&str)->Result<Vec<MariaEditableColumn>,String>{
+    let columns:Vec<(String,String,String,String)>=conn.exec(
+        "SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, EXTRA FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? ORDER BY ORDINAL_POSITION",
+        (db,table)
+    ).map_err(|e|e.to_string())?;
+    let fields=columns.into_iter().filter(|(name,_,_,extra)| {
+        name!="id" && !extra.contains("auto_increment") && !extra.contains("GENERATED")
+    }).map(|(name,kind,nullable,_)|MariaEditableColumn {
+        name,data_type:kind,not_null:nullable=="NO"
+    }).collect();
+    Ok(fields)
+}
+
+#[tauri::command]
+pub fn maria_editable_columns(
+    state:State<'_,MariaManager>,database:String,table:String
+)->Result<Vec<MariaEditableColumn>,String>{
+    if system_name(&database) {return Err("Systemdatenbank ist geschützt.".into());}
+    quoted(&database)?;quoted(&table)?;
+    with_conn(state,|conn|column_definitions(conn,&database,&table))
+}
+
+#[tauri::command]
+pub fn maria_insert_row(
+    state:State<'_,MariaManager>,database:String,table:String,values:Vec<MariaInsertValue>
+)->Result<(),String>{
+    if system_name(&database) || values.is_empty() || values.len()>32 {
+        return Err("Ungültige Datenbank oder Spaltenanzahl (1–32).".into());
+    }
+    let schema=quoted(&database)?;
+    let tbl=quoted(&table)?;
+    with_conn(state,|conn|{
+        let allowed:std::collections::HashSet<String>=column_definitions(conn,&database,&table)?
+            .into_iter().map(|c|c.name).collect();
+        let mut seen=std::collections::HashSet::new();
+        for item in &values {
+            if !allowed.contains(&item.name) || !seen.insert(&item.name) ||
+                item.value.as_ref().is_some_and(|x|x.len()>16_384) {
+                return Err("Ungültige oder doppelte Spalte oder Zelle größer als 16 KiB.".into());
+            }
+        }
+        let columns=values.iter().map(|v|quoted(&v.name)).collect::<Result<Vec<_>,_>>()?.join(", ");
+        let placeholders=vec!["?";values.len()].join(", ");
+        let sql=format!("INSERT INTO {schema}.{tbl} ({columns}) VALUES ({placeholders})");
+        let params=values.iter().map(|v|match &v.value{
+            Some(text)=>Value::Bytes(text.clone().into_bytes()),
+            None=>Value::NULL
+        }).collect::<Vec<_>>();
+        conn.exec_drop(sql, mysql::Params::Positional(params))
+            .map_err(|e|format!("Zeile konnte nicht hinzugefügt werden: {e}"))
+    })
+}
+
 fn projection(columns:&[(String,String)])->Result<String,String>{
     let mut expressions=Vec::with_capacity(columns.len());
     for (name,kind) in columns {

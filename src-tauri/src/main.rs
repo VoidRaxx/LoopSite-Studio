@@ -60,6 +60,8 @@ fn main() {
             maria::maria_read_table,
             maria::maria_delete_database,
             maria::maria_create_table,
+            maria::maria_editable_columns,
+            maria::maria_insert_row,
             maria::maria_update_cell,
             maria_service::start_local_mariadb_service
         ])

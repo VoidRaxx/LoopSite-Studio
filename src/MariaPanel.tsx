@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 type Status = { host: string; port: number; username: string; version: string };
 type Preview = { columns: string[]; rows: (string | number | null)[][]; truncated: boolean; primaryKey: string | null };
 type NewColumn = { name: string; dataType: string; notNull: boolean };
+type EditableColumn = { name: string; dataType: string; notNull: boolean };
 const sqlTypes = ["TEXT","VARCHAR(255)","INTEGER","BIGINT","DOUBLE","DATETIME","BOOLEAN"];
 
 export default function MariaPanel() {
@@ -20,6 +21,9 @@ export default function MariaPanel() {
   const [newTable, setNewTable] = useState("");
   const [newColumns, setNewColumns] = useState<NewColumn[]>([{name:"title",dataType:"VARCHAR(255)",notNull:true}]);
   const [showCreateTable, setShowCreateTable] = useState(false);
+  const [editableColumns, setEditableColumns] = useState<EditableColumn[]>([]);
+  const [showInsert, setShowInsert] = useState(false);
+  const [insertValues, setInsertValues] = useState<Record<string,string>>({});
   const [deleteName, setDeleteName] = useState("");
   const [showDelete, setShowDelete] = useState(false);
   const [edit, setEdit] = useState<{keyValue:string;column:string;value:string;original:string}|null>(null);
@@ -63,8 +67,11 @@ export default function MariaPanel() {
 
   useEffect(()=>{
     let active=true;
-    setPreview(null); setEdit(null);
+    setPreview(null); setEdit(null); setEditableColumns([]); setShowInsert(false); setInsertValues({});
     if(!status||!database||!table)return;
+    invoke<EditableColumn[]>("maria_editable_columns",{database,table})
+      .then(result=>{if(active)setEditableColumns(result);})
+      .catch(e=>{if(active)setError(String(e));});
     invoke<Preview>("maria_read_table",{database,table})
       .then(result=>{if(active)setPreview(result);})
       .catch(e=>{if(active)setError(String(e));});
@@ -152,6 +159,22 @@ export default function MariaPanel() {
       setTables(next);setTable(name);setShowCreateTable(false);setNewTable("");
       setNotice("Tabelle angelegt.");
     }catch(e){setError("Tabelle konnte nicht erstellt werden: " + String(e));}
+    finally{setBusy(false);}
+  }
+
+  async function insertRow(e:FormEvent) {
+    e.preventDefault();
+    if (busy || !database || !table || editableColumns.length===0) return;
+    setBusy(true);setError("");setNotice("");
+    try {
+      const values=editableColumns.map(col=>({
+        name:col.name,
+        value:insertValues[col.name] === "" && !col.notNull ? null : (insertValues[col.name] ?? "")
+      }));
+      await invoke("maria_insert_row",{database,table,values});
+      setPreview(await invoke<Preview>("maria_read_table",{database,table}));
+      setInsertValues({});setShowInsert(false);setNotice("Datensatz hinzugefügt.");
+    }catch(e){setError("Datensatz konnte nicht hinzugefügt werden: " + String(e));}
     finally{setBusy(false);}
   }
   async function saveEdit(e:FormEvent){
@@ -255,7 +278,22 @@ export default function MariaPanel() {
           </form>}
           <div className="db-table-tabs">{tables.map(name=><button key={name} className={table===name?"selected":""} onClick={()=>setTable(name)}>{name}</button>)}
             {tables.length===0&&<p className="empty-list">Keine Tabellen vorhanden.</p>}</div>
-          {table&&<><div className="db-table-header"><strong>{table}</strong><span className="db-muted">Vorschau: maximal 100 Zeilen</span></div>
+          {table&&<><div className="db-table-header"><strong>{table}</strong><div className="db-controls">
+              <span className="db-muted">Vorschau: maximal 100 Zeilen</span>
+              <button className="secondary" disabled={busy || editableColumns.length===0}
+                onClick={()=>{setShowInsert(!showInsert);setEdit(null);}}>+ Datensatz</button>
+            </div></div>
+            {showInsert && <form className="db-form" onSubmit={e=>void insertRow(e)}>
+              <h3>Datensatz hinzufügen</h3>
+              <div className="db-insert-grid">{editableColumns.map(col=><label key={col.name}>
+                {col.name} <small>{col.dataType}{col.notNull?" · Pflicht":""}</small>
+                <input maxLength={16384} value={insertValues[col.name]??""}
+                  onChange={e=>setInsertValues(v=>({...v,[col.name]:e.target.value}))}
+                  placeholder={col.notNull?"Wert eingeben":"Leer = NULL"}/>
+              </label>)}</div>
+              <div className="db-controls"><button type="button" className="secondary" onClick={()=>setShowInsert(false)}>Abbrechen</button>
+                <button type="submit" className="primary" disabled={busy}>Datensatz speichern</button></div>
+            </form>
             {edit && <form className="db-form" onSubmit={e=>void saveEdit(e)}>
               <h3>{edit.column} bearbeiten</h3>
               <p className="db-muted">Primärschlüssel: {preview?.primaryKey} = {edit.keyValue}</p>
