@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { DomainRoute, Project, Runtime, ServerConfig, Theme } from "./types";
 
 type Panel = "projects" | "settings";
+type RunningServer = { projectId: string; serverId: string; port: number; lanAccess: boolean };
 type Dialog = "project" | "server" | "domain" | null;
 const uid = () => crypto.randomUUID();
 
@@ -22,6 +24,9 @@ function getError(error: unknown): string {
 }
 export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
+  const [running, setRunning] = useState<RunningServer[]>([]);
+  const [activeLog, setActiveLog] = useState<string | null>(null);
+  const [logText, setLogText] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [panel, setPanel] = useState<Panel>("projects");
   const [dialog, setDialog] = useState<Dialog>(null);
@@ -54,6 +59,36 @@ export default function App() {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem("loopsite-theme", theme);
   }, [theme]);
+
+  useEffect(() => {
+    let alive = true;
+    const refresh = () => invoke<RunningServer[]>("list_running_servers").then(data => {
+      if (alive) setRunning(data);
+    }).catch(err => { if (alive) setError("Serverstatus: " + getError(err)); });
+    void refresh();
+    const timer = window.setInterval(refresh, 2000);
+    return () => { alive = false; window.clearInterval(timer); };
+  }, []);
+
+  async function toggleServer(projectId: string, serverId: string, isRunning: boolean) {
+    setBusy(true); setError("");
+    try {
+      await invoke(isRunning ? "stop_server" : "start_server", { projectId, serverId });
+      setRunning(await invoke<RunningServer[]>("list_running_servers"));
+    } catch (err) { setError("Server konnte nicht " + (isRunning ? "gestoppt" : "gestartet") + " werden: " + getError(err)); }
+    finally { setBusy(false); }
+  }
+  async function showLog(projectId: string, serverId: string) {
+    setError("");
+    try {
+      const log = await invoke<string>("read_server_log", { projectId, serverId });
+      setLogText(log); setActiveLog(serverId);
+    } catch (err) { setError("Log konnte nicht geöffnet werden: " + getError(err)); }
+  }
+  async function openServerUrl(port: number) {
+    try { await openUrl("http://127.0.0.1:" + port); }
+    catch (err) { setError("Browser konnte nicht geöffnet werden: " + getError(err)); }
+  }
 
   const selected = useMemo(() => projects.find(p => p.id === selectedId) ?? null, [projects, selectedId]);
 
@@ -126,6 +161,7 @@ export default function App() {
     if (await persist(next)) setDialog(null);
   }
   async function deleteProject(project: Project) {
+    if (running.some(r => r.projectId === project.id)) { setError("Bitte alle Server dieses Projekts zuerst stoppen."); return; }
     if (!window.confirm('Projekt "' + project.name + '" aus LoopSite entfernen? Dateien auf der Festplatte bleiben erhalten.')) return;
     const next = projects.filter(p => p.id !== project.id);
     if (await persist(next)) setSelectedId(next[0]?.id ?? null);
@@ -135,6 +171,7 @@ export default function App() {
     if (selected.domains.some(d => d.serverId === server.id)) {
       setError("Entferne zuerst die Domains, die auf diesen Server verweisen."); return;
     }
+    if (running.some(r => r.serverId === server.id && r.projectId === selected.id)) { setError("Bitte den Server zuerst stoppen."); return; }
     if (!window.confirm('Server "' + server.name + '" aus der Konfiguration entfernen?')) return;
     await persist(projects.map(p => p.id === selected.id
       ? { ...p, servers: p.servers.filter(s => s.id !== server.id) } : p));
@@ -185,7 +222,17 @@ export default function App() {
               {selected.servers.length === 0 && <div className="empty-section">Noch keine Server konfiguriert.</div>}
               {selected.servers.map(s => <article className="item-card" key={s.id}>
                 <div><strong>{s.name}</strong><p>{s.runtime.toUpperCase()} · 127.0.0.1:{s.port}{s.routerFile ? " · Router: " + s.routerFile : ""}</p><small>{s.rootPath}</small></div>
-                <div className="item-right"><span className="status">Konfiguriert</span><button className="icon-button" title="Server entfernen" onClick={() => void deleteServer(s)} disabled={busy}>×</button></div>
+                <div className="item-right">
+                  <span className="status">{running.some(r => r.projectId === selected.id && r.serverId === s.id) ? "Läuft" : "Gestoppt"}</span>
+                  {running.some(r => r.projectId === selected.id && r.serverId === s.id) && <>
+                    <button className="secondary" title="Im Browser öffnen" onClick={() => void openServerUrl(s.port)}>Öffnen</button>
+                    {s.runtime === "php" && <button className="secondary" onClick={() => void showLog(selected.id, s.id)}>Log</button>}
+                  </>}
+                  <button className="secondary" disabled={busy || s.runtime === "custom"} onClick={() => void toggleServer(selected.id, s.id, running.some(r => r.projectId === selected.id && r.serverId === s.id))}>
+                    {running.some(r => r.projectId === selected.id && r.serverId === s.id) ? "Stoppen" : "Starten"}
+                  </button>
+                  <button className="icon-button" title="Server entfernen" onClick={() => void deleteServer(s)} disabled={busy}>×</button>
+                </div>
               </article>)}
               <div className="section-head"><div><h3>Domains & Subdomains</h3><p>Hostnamen auf vorhandene Server routen.</p></div><button className="secondary" onClick={openDomain} disabled={busy || selected.servers.length === 0}>+ Domain</button></div>
               {selected.domains.length === 0 && <div className="empty-section">Noch keine Domains konfiguriert.</div>}
@@ -194,12 +241,13 @@ export default function App() {
                 return <article className="item-card" key={d.id}><div><strong>{d.hostname}</strong><p>{d.https ? "HTTPS" : "HTTP"} → {server?.name ?? "Unbekannter Server"} :{server?.port}</p></div>
                   <button className="icon-button" title="Domain entfernen" onClick={() => void deleteDomain(d)} disabled={busy}>×</button></article>;
               })}
-              <div className="hint">Die Konfiguration wird bereits gespeichert. Starten, Reverse Proxy, Runtime-Downloads und Datenbankverwaltung werden in den nächsten Entwicklungsschritten implementiert.</div>
+              <div className="hint">PHP- und statische Server können lokal gestartet und gestoppt werden. Domain-Routing, Runtime-Downloads und Datenbanken folgen in späteren Entwicklungsschritten.</div>
             </>}
           </div>
         </div>
       </section>}
     </main>
+    {activeLog && <div className="overlay" onMouseDown={e => { if (e.target === e.currentTarget) setActiveLog(null); }}><div className="modal"><h2>PHP-Serverprotokoll</h2><pre style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere",maxHeight:"55vh",overflow:"auto",fontSize:12}}>{logText || "Keine Ausgabe vorhanden."}</pre><button className="secondary" onClick={() => setActiveLog(null)}>Schließen</button></div></div>}
     {dialog && <div className="overlay" onMouseDown={event => { if (event.target === event.currentTarget && !busy) setDialog(null); }}>
       <form className="modal" onSubmit={event => { event.preventDefault(); void (dialog === "project" ? createProject() : dialog === "server" ? createServer() : createDomain()); }}>
         <h2>{dialog === "project" ? "Neues Projekt" : dialog === "server" ? "Server hinzufügen" : "Domain hinzufügen"}</h2>

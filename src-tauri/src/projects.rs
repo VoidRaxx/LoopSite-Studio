@@ -7,32 +7,32 @@ use tauri::{AppHandle, Manager};
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerConfig {
-    id: String,
-    name: String,
-    root_path: String,
-    port: u16,
-    runtime: String,
-    router_file: Option<String>,
-    lan_access: bool,
+    pub id: String,
+    pub name: String,
+    pub root_path: String,
+    pub port: u16,
+    pub runtime: String,
+    pub router_file: Option<String>,
+    pub lan_access: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DomainRoute {
-    id: String,
-    hostname: String,
-    server_id: String,
-    https: bool,
+    pub id: String,
+    pub hostname: String,
+    pub server_id: String,
+    pub https: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Project {
-    id: String,
-    name: String,
-    root_path: String,
-    servers: Vec<ServerConfig>,
-    domains: Vec<DomainRoute>,
+    pub id: String,
+    pub name: String,
+    pub root_path: String,
+    pub servers: Vec<ServerConfig>,
+    pub domains: Vec<DomainRoute>,
 }
 
 fn projects_file(app: &AppHandle) -> Result<PathBuf, String> {
