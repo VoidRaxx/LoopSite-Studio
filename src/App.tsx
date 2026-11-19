@@ -6,8 +6,9 @@ import type { DomainRoute, Project, Runtime, ServerConfig, Theme } from "./types
 import EditorPanel from "./EditorPanel";
 import DatabasePanel from "./DatabasePanel";
 import MariaPanel from "./MariaPanel";
+import RuntimeInstallPanel from "./RuntimeInstallPanel";
 
-type Panel = "projects" | "routing" | "editor" | "php" | "databases" | "settings";
+type Panel = "projects" | "routing" | "editor" | "php" | "databases" | "setup" | "settings";
 type PhpRuntime = { path: string; version: string; source: string };
 type ProxyStatus = { running: boolean; port: number | null; hostnameCount: number };
 type RunningServer = { projectId: string; serverId: string; port: number; lanAccess: boolean };
@@ -309,13 +310,14 @@ export default function App() {
         <button className={panel === "editor" ? "nav active" : "nav"} onClick={() => navigate("editor")}>▤ <span>Editor</span></button>
         <button className={panel === "databases" ? "nav active" : "nav"} onClick={() => navigate("databases")}>▤ <span>Datenbanken</span></button>
         <button className={panel === "php" ? "nav active" : "nav"} onClick={() => navigate("php")}>⌘ <span>PHP-Laufzeiten</span></button>
+        <button className={panel === "setup" ? "nav active" : "nav"} onClick={() => navigate("setup")}>↓ <span>Einrichtung</span></button>
         <button className={panel === "settings" ? "nav active" : "nav"} onClick={() => navigate("settings")}>⚙ <span>Einstellungen</span></button>
       </nav>
       <div className="sidebar-note">Lokal. Privat. Unter deiner Kontrolle.</div>
     </aside>
     <main className="main">
       {error && <div className="notice error" role="alert">{error}<button onClick={() => setError("")} aria-label="Fehler schließen">×</button></div>}
-      {panel === "databases" ? <>
+      {panel === "setup" ? <RuntimeInstallPanel onInstalled={() => { void refreshPhp(); }} /> : panel === "databases" ? <>
         <div className="db-engine-switch" role="group" aria-label="Datenbanktyp">
           <button className={dbEngine === "sqlite" ? "selected" : ""} onClick={() => setDbEngine("sqlite")}>SQLite</button>
           <button className={dbEngine === "maria" ? "selected" : ""} onClick={() => setDbEngine("maria")}>MariaDB / MySQL</button>

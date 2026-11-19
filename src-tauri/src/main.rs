@@ -8,6 +8,7 @@ mod executables;
 mod php;
 mod sqlite;
 mod maria;
+mod install;
 
 fn main() {
     let manager = servers::ServerManager::default();
@@ -15,6 +16,7 @@ fn main() {
         .manage(manager)
         .manage(proxy::ProxyManager::default())
         .manage(maria::MariaManager::default())
+        .manage(install::InstallState::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
@@ -33,6 +35,8 @@ fn main() {
             editor::save_project_file,
             php::list_php_runtimes,
             php::register_php_runtime,
+            install::runtime_install_plan,
+            install::install_runtime,
             sqlite::create_sqlite_database,
             sqlite::list_sqlite_databases,
             sqlite::create_sqlite_table,

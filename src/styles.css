@@ -81,3 +81,15 @@
 .db-connect-grid label:nth-child(3),.db-connect-grid label:nth-child(4){grid-column:span 1}
 .maria-connect{max-width:750px}
 @media(max-width:650px){.db-connect-grid{grid-template-columns:1fr}}
+
+/* Runtime installation assistant */
+.setup-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:17px}
+.setup-panel .setup-top{display:flex;justify-content:space-between;align-items:start;gap:13px}
+.setup-top h2{margin-bottom:9px}
+.setup-top .status{flex-shrink:0}
+.setup-command{display:grid;gap:9px;padding:13px;margin:14px 0;background:var(--glass);border:1px solid var(--line);border-radius:10px}
+.setup-command strong{font-size:12px}
+.setup-command code{font-size:11px;color:var(--muted);white-space:normal;overflow-wrap:anywhere}
+.setup-command small{color:var(--muted);font-size:11px}
+.setup-message{color:var(--muted);font-size:12px;line-height:1.5;margin-top:15px;overflow-wrap:anywhere}
+.setup-panel .hint{margin-top:20px;line-height:1.7}
