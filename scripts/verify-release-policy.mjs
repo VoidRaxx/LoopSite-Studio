@@ -11,6 +11,7 @@ const pkg = read("packaging/arch/PKGBUILD");
 const app = read("src/App.tsx");
 
 assert.equal(portable.app.appDirectoriesOverride,"./portable-data","Portable paths must be isolated");
+assert.equal(portable.bundle?.createUpdaterArtifacts,false,"Portable builds must not require signing secrets or self-install updates");
 assert.ok(!/actions\/upload-artifact@/.test(ci),"CI must not upload downloadable installers");
 assert.match(release,/workflow_dispatch:/,"Release workflow must require manual dispatch");
 assert.ok(!/^\s+push:\s*$/m.test(release),"Release must not auto-publish on push");
