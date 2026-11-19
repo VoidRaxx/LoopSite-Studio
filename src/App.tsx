@@ -254,7 +254,7 @@ export default function App() {
             <button className="primary" onClick={() => void toggleProxy()} disabled={proxyBusy || busy}>
               {proxyBusy ? "Bitte warten …" : proxy.running ? "Proxy stoppen" : "Proxy starten"}
             </button>
-            {proxy.running && <button className="secondary" onClick={() => void showProxyLog()}>Log anzeigen</button>}
+            <button className="secondary" onClick={() => void showProxyLog()}>Log anzeigen</button>
           </div>
           <p className="hint">Routing ist aktuell HTTP-only. HTTPS und automatische Caddy-Installation folgen. Für .localhost-Domains kann die lokale Auflösung verwendet werden; andere Domains benötigen eine passende hosts-/DNS-Konfiguration. Nach Domainänderungen den Proxy neu starten. Der Proxy bindet ausschließlich an 127.0.0.1.</p>
         </div>
@@ -292,8 +292,9 @@ export default function App() {
                   <span className="status">{running.some(r => r.projectId === selected.id && r.serverId === s.id) ? "Läuft" : "Gestoppt"}</span>
                   {running.some(r => r.projectId === selected.id && r.serverId === s.id) && <>
                     <button className="secondary" title="Im Browser öffnen" onClick={() => void openServerUrl(s.port)}>Öffnen</button>
-                    {s.runtime === "php" && <button className="secondary" onClick={() => void showLog(selected.id, s.id)}>Log</button>}
+                    
                   </>}
+                  {s.runtime === "php" && <button className="secondary" onClick={() => void showLog(selected.id, s.id)}>Log</button>}
                   <button className="secondary" disabled={busy || s.runtime === "custom"} onClick={() => void toggleServer(selected.id, s.id, running.some(r => r.projectId === selected.id && r.serverId === s.id))}>
                     {running.some(r => r.projectId === selected.id && r.serverId === s.id) ? "Stoppen" : "Starten"}
                   </button>

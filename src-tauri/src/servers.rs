@@ -274,16 +274,23 @@ pub fn list_running_servers(state: State<'_, ServerManager>) -> Result<Vec<Runni
 
 #[tauri::command]
 pub fn read_server_log(
+    app: AppHandle,
     state: State<'_, ServerManager>,
     project_id: String,
     server_id: String,
 ) -> Result<String, String> {
     use std::io::{Seek, SeekFrom};
     let lock = state.0.lock().map_err(|_| "Interner Serverzustand beschädigt.")?;
-    let entry = lock.get(&identifier(&project_id, &server_id))
-        .ok_or("Server läuft nicht.")?;
-    let path = entry.log_path.as_ref().ok_or("Dieser Server hat kein Prozesslog.")?;
-    let mut file = File::open(path).map_err(|e| e.to_string())?;
+    let path = if let Some(entry) = lock.get(&identifier(&project_id, &server_id)) {
+        entry.log_path.clone().ok_or("Dieser Server hat kein Prozesslog.")?
+    } else {
+        let config = resolve_server(app.clone(), &project_id, &server_id)?;
+        if config.runtime != "php" { return Err("Dieser Server hat kein PHP-Prozesslog.".into()); }
+        app.path().app_log_dir().map_err(|e| e.to_string())?
+            .join(format!("server-{}-{}.log", config.id, config.port))
+    };
+    let mut file = File::open(&path)
+        .map_err(|e| format!("Noch kein Log vorhanden: {e}"))?;
     let len = file.metadata().map_err(|e| e.to_string())?.len();
     file.seek(SeekFrom::Start(len.saturating_sub(32_768))).map_err(|e| e.to_string())?;
     let mut bytes = Vec::new();

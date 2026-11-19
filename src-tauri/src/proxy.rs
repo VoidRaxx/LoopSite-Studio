@@ -178,10 +178,9 @@ pub fn stop_proxy(state: State<'_, ProxyManager>) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn read_proxy_log(state: State<'_, ProxyManager>) -> Result<String, String> {
-    let lock = state.0.lock().map_err(|_| "Proxy-Status nicht verfügbar.")?;
-    let process = lock.as_ref().ok_or("Domain-Proxy läuft nicht.")?;
-    let mut file = File::open(&process.log_path).map_err(|e| e.to_string())?;
+pub fn read_proxy_log(app: AppHandle) -> Result<String, String> {
+    let log_path = app.path().app_log_dir().map_err(|e| e.to_string())?.join("local-proxy.log");
+    let mut file = File::open(log_path).map_err(|e| format!("Noch kein Proxy-Log vorhanden: {e}"))?;
     let size = file.metadata().map_err(|e| e.to_string())?.len();
     file.seek(SeekFrom::Start(size.saturating_sub(32_768))).map_err(|e| e.to_string())?;
     let mut bytes = Vec::new();
