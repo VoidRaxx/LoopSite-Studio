@@ -3,8 +3,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { DomainRoute, Project, Runtime, ServerConfig, Theme } from "./types";
+import EditorPanel from "./EditorPanel";
 
-type Panel = "projects" | "routing" | "settings";
+type Panel = "projects" | "routing" | "editor" | "settings";
 type ProxyStatus = { running: boolean; port: number | null; hostnameCount: number };
 type RunningServer = { projectId: string; serverId: string; port: number; lanAccess: boolean };
 type Dialog = "project" | "server" | "domain" | null;
@@ -25,6 +26,7 @@ function getError(error: unknown): string {
 }
 export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
+  const [editorDirty, setEditorDirty] = useState(false);
   const [proxy, setProxy] = useState<ProxyStatus>({ running: false, port: null, hostnameCount: 0 });
   const [proxyPort, setProxyPort] = useState("8080");
   const [proxyBusy, setProxyBusy] = useState(false);
@@ -218,19 +220,45 @@ export default function App() {
       ? { ...p, domains: p.domains.filter(d => d.id !== domain.id) } : p));
   }
 
+  useEffect(() => {
+    if (!editorDirty) return;
+    const block = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", block);
+    return () => window.removeEventListener("beforeunload", block);
+  }, [editorDirty]);
+
+  function navigate(next: Panel) {
+    if (panel === next) return;
+    if (panel === "editor" && editorDirty &&
+        !window.confirm("Ungespeicherte Editoränderungen verwerfen?")) return;
+    setEditorDirty(false);
+    setPanel(next);
+  }
+  function switchEditorProject(id: string) {
+    if (selectedId === id) return;
+    if (editorDirty && !window.confirm("Ungespeicherte Editoränderungen verwerfen?")) return;
+    setEditorDirty(false);
+    setSelectedId(id);
+  }
+
   return <div className="app">
     <aside className="sidebar">
       <div className="brand"><img className="brand-image" src="/loopsite-logo.png" alt="LoopSite Studio" /><div><strong>LoopSite Studio</strong><small>Local Development Environment</small></div></div>
       <nav>
-        <button className={panel === "projects" ? "nav active" : "nav"} onClick={() => setPanel("projects")}>▦ <span>Projekte</span></button>
-        <button className={panel === "routing" ? "nav active" : "nav"} onClick={() => setPanel("routing")}>◉ <span>Routing</span></button>
-        <button className={panel === "settings" ? "nav active" : "nav"} onClick={() => setPanel("settings")}>⚙ <span>Einstellungen</span></button>
+        <button className={panel === "projects" ? "nav active" : "nav"} onClick={() => navigate("projects")}>▦ <span>Projekte</span></button>
+        <button className={panel === "routing" ? "nav active" : "nav"} onClick={() => navigate("routing")}>◉ <span>Routing</span></button>
+        <button className={panel === "editor" ? "nav active" : "nav"} onClick={() => navigate("editor")}>▤ <span>Editor</span></button>
+        <button className={panel === "settings" ? "nav active" : "nav"} onClick={() => navigate("settings")}>⚙ <span>Einstellungen</span></button>
       </nav>
       <div className="sidebar-note">Lokal. Privat. Unter deiner Kontrolle.</div>
     </aside>
     <main className="main">
       {error && <div className="notice error" role="alert">{error}<button onClick={() => setError("")} aria-label="Fehler schließen">×</button></div>}
-      {panel === "settings" ? <section>
+      {panel === "editor" ? <EditorPanel project={selected} projects={projects} theme={theme}
+        onSelectProject={switchEditorProject} onDirtyChange={setEditorDirty}/> : panel === "settings" ? <section>
         <div className="page-heading"><div><p className="eyebrow">ANPASSUNG</p><h1>Einstellungen</h1><p>Darstellung von LoopSite Studio.</p></div></div>
         <div className="card settings"><h2>Design</h2><p>Wähle ein Theme. Die Auswahl wird lokal gespeichert.</p>
           <div className="theme-grid">

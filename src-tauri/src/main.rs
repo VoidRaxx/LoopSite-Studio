@@ -3,6 +3,7 @@
 mod projects;
 mod servers;
 mod proxy;
+mod editor;
 
 fn main() {
     let manager = servers::ServerManager::default();
@@ -21,7 +22,10 @@ fn main() {
             proxy::start_proxy,
             proxy::stop_proxy,
             proxy::proxy_status,
-            proxy::read_proxy_log
+            proxy::read_proxy_log,
+            editor::list_project_directory,
+            editor::read_project_file,
+            editor::save_project_file
         ])
         .on_window_event(|window, event| {
             if matches!(event, tauri::WindowEvent::Destroyed) {

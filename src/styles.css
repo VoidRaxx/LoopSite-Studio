@@ -11,3 +11,30 @@
 .proxy-actions{display:flex;align-items:end;gap:12px;flex-wrap:wrap;margin:20px 0}.proxy-actions label{display:grid;gap:6px;color:var(--muted);font-size:12px}.proxy-actions input{max-width:145px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text)}
 
 .brand-image{display:block;width:40px;height:40px;object-fit:cover;border-radius:12px;border:1px solid var(--line)}
+
+.editor-page .page-heading{margin-bottom:20px}
+.editor-project-choice{display:grid;gap:7px;font-size:12px;color:var(--muted);min-width:180px}
+.editor-project-choice select{background:var(--panel);border:1px solid var(--line);color:var(--text);border-radius:9px;padding:9px}
+.editor-layout{display:grid;grid-template-columns:235px minmax(0,1fr);min-height:540px;border:1px solid var(--line);border-radius:16px;background:var(--panel);overflow:hidden}
+.editor-files{border-right:1px solid var(--line);min-width:0}
+.editor-path-header{display:flex;align-items:center;justify-content:space-between;padding:14px 15px;border-bottom:1px solid var(--line);font-size:12px}
+.editor-path{font-family:monospace;font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:11px 15px}
+.editor-file-list{overflow:auto;max-height:65vh;padding:0 6px 15px}
+.editor-entry{display:flex;align-items:center;gap:10px;padding:9px 12px;width:100%;border:0;border-radius:7px;text-align:left;background:transparent;color:var(--text);font-size:12px;overflow:hidden}
+.editor-entry span:last-child{overflow:hidden;text-overflow:ellipsis}
+.editor-entry:hover{background:var(--accent-bg)}
+.editor-main{display:flex;min-width:0;flex-direction:column}
+.editor-tabs{display:flex;align-items:center;gap:1px;overflow-x:auto;min-height:43px;background:var(--sidebar);border-bottom:1px solid var(--line)}
+.editor-tab{display:flex;align-items:center;white-space:nowrap;border-right:1px solid var(--line);color:var(--muted);font-size:12px}
+.editor-tab.selected{background:var(--panel);color:var(--text)}
+.editor-tab button{border:0;background:transparent;color:inherit;padding:12px 8px}
+.editor-tab button:first-child{padding-left:14px}
+.editor-tab-close{font-size:17px;line-height:1}
+.editor-toolbar{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:8px 14px;border-bottom:1px solid var(--line);font-size:11px;color:var(--muted)}
+.editor-toolbar span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.editor-monaco{height:540px;min-height:360px}
+.editor-placeholder{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:30px}
+.editor-placeholder h3{font-size:17px}
+.editor-placeholder p,.editor-footnote{color:var(--muted);font-size:12px;line-height:1.6}
+.editor-footnote{margin:14px 0}
+@media(max-width:850px){.editor-layout{grid-template-columns:180px minmax(0,1fr)}.editor-project-choice{min-width:120px}}

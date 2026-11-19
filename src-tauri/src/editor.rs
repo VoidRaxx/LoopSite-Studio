@@ -1,0 +1,228 @@
+use crate::projects;
+use serde::Serialize;
+use sha2::{Digest, Sha256};
+use std::fs;
+use std::path::{Path, PathBuf};
+use tauri::AppHandle;
+
+const MAX_TEXT_BYTES: u64 = 4 * 1024 * 1024;
+const MAX_DIRECTORY_ENTRIES: usize = 500;
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileEntry {
+    name: String,
+    path: String,
+    is_dir: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenFile {
+    content: String,
+    hash: String,
+}
+
+fn project_root(app: AppHandle, project_id: &str) -> Result<PathBuf, String> {
+    let project = projects::load_projects(app)?
+        .into_iter().find(|p| p.id == project_id)
+        .ok_or("Projekt existiert nicht.")?;
+    let root = fs::canonicalize(&project.root_path).map_err(|err| err.to_string())?;
+    if !root.is_dir() {
+        return Err("Projektpfad ist kein Verzeichnis.".into());
+    }
+    Ok(root)
+}
+
+fn checked_parts(path: &str, allow_root: bool) -> Result<Vec<&str>, String> {
+    if path.is_empty() && allow_root {
+        return Ok(vec![]);
+    }
+    if path.is_empty()
+        || path.starts_with('/')
+        || path.contains('\\')
+        || path.contains('\0')
+        || path.contains(':')
+        || path.split('/').any(|s| s.is_empty() || s == "." || s == ".." || s == ".git")
+    {
+        return Err("Ungültiger Projektpfad.".into());
+    }
+    Ok(path.split('/').collect())
+}
+
+fn checked_path(root: &Path, relative: &str, allow_root: bool) -> Result<PathBuf, String> {
+    let segments = checked_parts(relative, allow_root)?;
+    let mut candidate = root.to_path_buf();
+    for segment in segments {
+        candidate.push(segment);
+    }
+    let canonical = fs::canonicalize(candidate).map_err(|err| format!("Datei/Ordner nicht gefunden: {err}"))?;
+    if !canonical.starts_with(root) {
+        return Err("Zugriff außerhalb des Projektordners verweigert.".into());
+    }
+    if canonical.strip_prefix(root).map_err(|e| e.to_string())?
+        .components().any(|c| c.as_os_str() == ".git") {
+        return Err("Git-Verwaltungsdateien sind geschützt.".into());
+    }
+    Ok(canonical)
+}
+
+fn digest(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
+}
+
+fn load_text(path: &Path) -> Result<OpenFile, String> {
+    if !path.is_file() {
+        return Err("Dieser Pfad ist keine Datei.".into());
+    }
+    let metadata = fs::metadata(path).map_err(|err| err.to_string())?;
+    if metadata.len() > MAX_TEXT_BYTES {
+        return Err("Datei ist zu groß (maximal 4 MiB).".into());
+    }
+    let bytes = fs::read(path).map_err(|err| err.to_string())?;
+    if bytes.len() as u64 > MAX_TEXT_BYTES {
+        return Err("Datei ist zu groß (maximal 4 MiB).".into());
+    }
+    if bytes.contains(&0) {
+        return Err("Binärdateien können nicht als Text bearbeitet werden.".into());
+    }
+    let content = String::from_utf8(bytes.clone())
+        .map_err(|_| "Nur UTF-8-Textdateien werden derzeit unterstützt.".to_string())?;
+    Ok(OpenFile { content, hash: digest(&bytes) })
+}
+
+#[tauri::command]
+pub fn list_project_directory(
+    app: AppHandle,
+    project_id: String,
+    path: String,
+) -> Result<Vec<FileEntry>, String> {
+    let root = project_root(app, &project_id)?;
+    let dir = checked_path(&root, &path, true)?;
+    if !dir.is_dir() {
+        return Err("Der Pfad ist kein Ordner.".into());
+    }
+    let mut files = Vec::new();
+    for result in fs::read_dir(dir).map_err(|err| err.to_string())? {
+        let entry = result.map_err(|err| err.to_string())?;
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name == ".git" || name.chars().any(|c| matches!(c, '/' | '\\' | '\0')) {
+            continue;
+        }
+        // Hide out-of-project symlink targets and broken links.
+        let real = match entry.path().canonicalize() {
+            Ok(p) if p.starts_with(&root) &&
+                !p.strip_prefix(&root).is_ok_and(|r| r.components().any(|c| c.as_os_str() == ".git")) => p,
+            _ => continue,
+        };
+        files.push(FileEntry {
+            name: name.clone(),
+            path: if path.is_empty() { name } else { format!("{path}/{name}") },
+            is_dir: real.is_dir(),
+        });
+        if files.len() > MAX_DIRECTORY_ENTRIES {
+            return Err("Der Ordner enthält über 500 Einträge. Bitte öffne einen kleineren Unterordner.".into());
+        }
+    }
+    files.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then(a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+    Ok(files)
+}
+
+#[tauri::command]
+pub fn read_project_file(
+    app: AppHandle,
+    project_id: String,
+    path: String,
+) -> Result<OpenFile, String> {
+    let root = project_root(app, &project_id)?;
+    let file = checked_path(&root, &path, false)?;
+    load_text(&file)
+}
+
+fn checked_save(file: &Path, content: &str, expected_hash: &str) -> Result<String, String> {
+    if content.len() as u64 > MAX_TEXT_BYTES {
+        return Err("Datei ist zu groß (maximal 4 MiB).".into());
+    }
+    let current = load_text(file)?;
+    if current.hash != expected_hash {
+        return Err("Die Datei wurde zwischenzeitlich außerhalb von LoopSite geändert. Bitte neu öffnen und Änderungen vergleichen.".into());
+    }
+    // Existing files only. Atomic replacement is a future hardening step.
+    fs::write(file, content.as_bytes())
+        .map_err(|err| format!("Datei konnte nicht gespeichert werden: {err}"))?;
+    Ok(digest(content.as_bytes()))
+}
+
+#[tauri::command]
+pub fn save_project_file(
+    app: AppHandle,
+    project_id: String,
+    path: String,
+    content: String,
+    expected_hash: String,
+) -> Result<String, String> {
+    let root = project_root(app, &project_id)?;
+    let file = checked_path(&root, &path, false)?;
+    checked_save(&file, &content, &expected_hash)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn blocks_traversal_and_drive_paths() {
+        assert!(checked_parts("../secret", false).is_err());
+        assert!(checked_parts("folder/../../secret", false).is_err());
+        assert!(checked_parts("C:/windows/system.ini", false).is_err());
+        assert!(checked_parts("/etc/passwd", false).is_err());
+        assert!(checked_parts("dir\\file.txt", false).is_err());
+        assert!(checked_parts(".git/config", false).is_err());
+        assert!(checked_parts("", true).is_ok());
+        assert!(checked_parts("src/example.php", false).is_ok());
+    }
+
+    #[test]
+    fn hashes_are_stable_and_sensitive_to_changes() {
+        assert_eq!(digest(b"hello"), digest(b"hello"));
+        assert_ne!(digest(b"hello"), digest(b"HELLO"));
+    }
+
+    #[test]
+    fn prevents_overwriting_changed_files() {
+        let file = std::env::temp_dir().join(format!("loopsite-test-{}-conflict", std::process::id()));
+        fs::write(&file, b"first").unwrap();
+        let original = load_text(&file).unwrap();
+        fs::write(&file, b"external edit").unwrap();
+        assert!(checked_save(&file, "new content", &original.hash).is_err());
+        assert_eq!(fs::read_to_string(&file).unwrap(), "external edit");
+        let actual = load_text(&file).unwrap();
+        let new_hash = checked_save(&file, "saved", &actual.hash).unwrap();
+        assert_eq!(new_hash, digest(b"saved"));
+        assert_eq!(fs::read_to_string(&file).unwrap(), "saved");
+        fs::remove_file(file).unwrap();
+    }
+
+    #[test]
+    fn rejects_binary_files() {
+        let path = std::env::temp_dir().join(format!("loopsite-test-{}-binary", std::process::id()));
+        fs::write(&path, b"start\0end").unwrap();
+        assert!(load_text(&path).is_err());
+        fs::remove_file(path).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn refuses_symlinks_outside_project() {
+        use std::os::unix::fs::symlink;
+        let root = std::env::temp_dir().join(format!("loopsite-root-{}", std::process::id()));
+        let outside = std::env::temp_dir().join(format!("loopsite-other-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        fs::write(&outside, "secret").unwrap();
+        symlink(&outside, root.join("link.txt")).unwrap();
+        let root = fs::canonicalize(root).unwrap();
+        assert!(checked_path(&root, "link.txt", false).is_err());
+        fs::remove_file(root.join("link.txt")).unwrap();
+        fs::remove_dir(root).unwrap();
+        fs::remove_file(outside).unwrap();
+    }
+}
