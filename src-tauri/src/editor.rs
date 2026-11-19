@@ -1,8 +1,10 @@
 use crate::projects;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
 
 const MAX_TEXT_BYTES: u64 = 4 * 1024 * 1024;
@@ -147,9 +149,29 @@ fn checked_save(file: &Path, content: &str, expected_hash: &str) -> Result<Strin
     if current.hash != expected_hash {
         return Err("Die Datei wurde zwischenzeitlich außerhalb von LoopSite geändert. Bitte neu öffnen und Änderungen vergleichen.".into());
     }
-    // Existing files only. Atomic replacement is a future hardening step.
-    fs::write(file, content.as_bytes())
-        .map_err(|err| format!("Datei konnte nicht gespeichert werden: {err}"))?;
+    // Write beside the target and replace it only after a successful sync.
+    // The original file remains intact if writing the temporary file fails.
+    let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)
+        .map_err(|err| err.to_string())?.as_nanos();
+    let filename = file.file_name().ok_or("Dateiname nicht gefunden.")?.to_string_lossy();
+    let temporary = file.with_file_name(format!(".{filename}.loopsite-{}-{timestamp}.tmp", std::process::id()));
+    let write_result = (|| -> Result<(), String> {
+        let mut output = OpenOptions::new().write(true).create_new(true)
+            .open(&temporary).map_err(|err| err.to_string())?;
+        output.write_all(content.as_bytes()).map_err(|err| err.to_string())?;
+        output.sync_all().map_err(|err| err.to_string())?;
+        let permissions = fs::metadata(file).map_err(|err| err.to_string())?.permissions();
+        fs::set_permissions(&temporary, permissions).map_err(|err| err.to_string())?;
+        if load_text(file)?.hash != expected_hash {
+            return Err("Datei hat sich während des Speicherns verändert.".into());
+        }
+        fs::rename(&temporary, file).map_err(|err| err.to_string())?;
+        Ok(())
+    })();
+    if write_result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    write_result.map_err(|err| format!("Datei konnte nicht sicher gespeichert werden: {err}"))?;
     Ok(digest(content.as_bytes()))
 }
 

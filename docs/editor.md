@@ -12,7 +12,7 @@ The **Editor** navigation item opens a project-local editor based on Monaco (the
 - Unsaved changes prompt before closing a tab or navigating away from the editor.
 - Only existing text files can be edited at this milestone. Creating, moving, deleting, and renaming files are not available yet.
 
-**Caution:** Save writes currently overwrite the file directly after a conflict check. Keep version control/backups for important project files. Transactional atomic file replacement is not yet implemented and needs further cross-platform testing.
+**Saving:** Writes go to a temporary file in the target directory, are synced to disk, and then replace the existing file via the operating system rename operation. The original is left in place if writing fails. Important files should still be version controlled or backed up; filesystem semantics and external concurrent edits can vary.
 
 To run the desktop application from source:
 
