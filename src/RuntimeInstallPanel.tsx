@@ -54,7 +54,7 @@ export default function RuntimeInstallPanel({ onInstalled }: Props) {
       "Auszuführender Befehl: " + plan.command,
       plan.requiresPrivilege ? "Es wird eine Systemberechtigung über Polkit angefordert." : "",
       "",
-      "LoopSite wird keine bereits vorhandene Installation überschreiben oder Dienste automatisch starten.",
+      "LoopSite führt keine eigenen Dienst-Startbefehle aus. Der System-Paketmanager kann allerdings Abhängigkeiten installieren und Dienste automatisch starten (z. B. Caddy unter Debian/Ubuntu).",
       "Mit der Installation fortfahren?",
     ].filter(Boolean).join("\n");
     if (!window.confirm(question)) return;

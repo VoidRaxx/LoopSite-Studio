@@ -332,6 +332,7 @@ export default function App() {
           <div className="php-actions">
             <button className="secondary" disabled={phpBusy} onClick={() => void refreshPhp()}>Erneut suchen</button>
             <button className="primary" disabled={phpBusy} onClick={() => void addPhpRuntime()}>+ PHP auswählen</button>
+            <button className="secondary" onClick={() => navigate("setup")}>PHP installieren</button>
           </div>
         </div>
         <div className="card settings">
@@ -345,11 +346,11 @@ export default function App() {
             {index === 0 && <span className="status">Automatische Auswahl</span>}
           </article>)}
           {phpRuntimes.length === 0 && <div className="empty-section">
-            Keine PHP-CLI gefunden. Du kannst eine bereits installierte PHP-Version über „PHP auswählen“ hinzufügen.
+            Keine PHP-CLI gefunden. Du kannst eine vorhandene Version auswählen oder PHP direkt über „Einrichtung“ installieren.
           </div>}
           <p className="hint">Im Automatikmodus verwendet LoopSite die höchste erkannte stabile PHP-Version.
             Bestehende Server mit fest zugewiesener Version bleiben unverändert.
-            Der automatische Download und die Installation neuer PHP-Versionen sind noch nicht implementiert.</p>
+            Unter „Einrichtung“ kannst du fehlendes PHP über den System-Paketmanager installieren.</p>
         </div>
       </section> : panel === "editor" ? <EditorPanel project={selected} projects={projects} theme={theme}
         onSelectProject={switchEditorProject} onDirtyChange={setEditorDirty}/> : panel === "settings" ? <section>
@@ -377,8 +378,9 @@ export default function App() {
               {proxyBusy ? "Bitte warten …" : proxy.running ? "Proxy stoppen" : "Proxy starten"}
             </button>
             <button className="secondary" onClick={() => void showProxyLog()}>Log anzeigen</button>
+            <button className="secondary" onClick={() => navigate("setup")}>Caddy installieren</button>
           </div>
-          <p className="hint">Routing ist aktuell HTTP-only. HTTPS und automatische Caddy-Installation folgen. Für .localhost-Domains kann die lokale Auflösung verwendet werden; andere Domains benötigen eine passende hosts-/DNS-Konfiguration. Nach Domainänderungen den Proxy neu starten. Der Proxy bindet ausschließlich an 127.0.0.1.</p>
+          <p className="hint">Routing ist aktuell HTTP-only. HTTPS folgt; fehlendes Caddy kann unter „Einrichtung“ über den System-Paketmanager installiert werden. Für .localhost-Domains kann die lokale Auflösung verwendet werden; andere Domains benötigen eine passende hosts-/DNS-Konfiguration. Nach Domainänderungen den Proxy neu starten. Der Proxy bindet ausschließlich an 127.0.0.1.</p>
         </div>
         <div className="card settings">
           <h2>Aktuelle Domain-Zuordnungen</h2>

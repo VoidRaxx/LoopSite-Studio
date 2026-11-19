@@ -121,7 +121,7 @@ fn plan_for(app: &AppHandle, component: &str) -> Result<InstallPlan, String> {
     };
     let description = match component {
         "php" => "Installiert eine PHP-CLI-Laufzeit. Windows: aktuelle PHP-8.5-Patchversion; Linux: Version aus den System-Repositories.",
-        "caddy" => "Installiert den lokalen Caddy-Reverse-Proxy. Der Proxy wird nicht automatisch als Dienst gestartet.",
+        "caddy" => "Installiert Caddy über den Paketmanager. Achtung: Einige Linux-Pakete starten dabei automatisch einen Systemdienst.",
         _ => unreachable!(),
     };
     match installation_spec(component) {

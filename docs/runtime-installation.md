@@ -29,7 +29,7 @@ The assistant never touches project data or existing database instances; it does
 ## Limitations and testing
 
 - Installations affect the host operating system rather than being sandboxed in a project. Administrative privileges may be necessary.
-- Installation of Caddy does not mean automatic starting/stopping of its systemd service. LoopSite continues to manage its own local Caddy subprocess.
+- LoopSite does not issue service start/stop commands during installation. **Some distribution packages (notably Caddy from Debian/Ubuntu) automatically start a systemd service as an installation side effect.** This can occupy ports such as 80/443; review installed services and firewall configuration as needed. LoopSite's local proxy still runs separately.
 - Cannot reliably prevent all package-manager side effects, such as installing dependencies. Confirm the plan before proceeding.
 - Automatically downloading isolated per-project runtime archives, version switching, PHP extension provisioning and MariaDB installation are not implemented yet.
 - The installer is not currently integrated into native installer onboarding. It is a dedicated desktop view.
