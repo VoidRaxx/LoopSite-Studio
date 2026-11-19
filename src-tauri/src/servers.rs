@@ -327,4 +327,40 @@ mod tests {
         assert_eq!(static_path(&root, "/.env").unwrap_err(), 403);
         assert_eq!(static_path(&root, "/hello%5cworld").unwrap_err(), 400);
     }
+
+    #[test]
+    fn static_server_responds_and_stops() {
+        let directory = std::env::temp_dir().join(format!("loopsite-http-{}", std::process::id()));
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(directory.join("index.html"), "<h1>LoopSite smoke test</h1>").unwrap();
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let worker = start_static(listener, fs::canonicalize(&directory).unwrap());
+
+        let mut connection = TcpStream::connect_timeout(&address, Duration::from_secs(2)).unwrap();
+        connection.write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n").unwrap();
+        connection.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        let mut received = String::new();
+        connection.read_to_string(&mut received).unwrap();
+        assert!(received.starts_with("HTTP/1.1 200 OK\r\n"));
+        assert!(received.contains("LoopSite smoke test"));
+
+        let mut forbidden = TcpStream::connect_timeout(&address, Duration::from_secs(2)).unwrap();
+        forbidden.write_all(b"GET /.env HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n").unwrap();
+        let mut forbidden_response = String::new();
+        forbidden.read_to_string(&mut forbidden_response).unwrap();
+        assert!(forbidden_response.starts_with("HTTP/1.1 403 Forbidden\r\n"));
+
+        stop_worker(worker).unwrap();
+        assert!(TcpStream::connect_timeout(&address, Duration::from_millis(250)).is_err());
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn duplicate_tcp_bind_is_rejected() {
+        let first = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = first.local_addr().unwrap();
+        assert!(TcpListener::bind(address).is_err());
+    }
 }
