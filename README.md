@@ -90,3 +90,5 @@ Test Website (Project)
 Local-only by default; no implicit router port forwarding or Internet exposure. Runtime downloads must be verified. Never automatically upgrade a running project's PHP or database major version.
 
 Licensed under the MIT license (see LICENSE).
+
+- Database deletion/archival, table creation and guarded row/cell editing; three UI sizes and six themes (experimental). See `docs/database-ui-and-themes.md`.

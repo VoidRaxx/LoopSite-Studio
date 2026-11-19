@@ -24,6 +24,10 @@ export default function DatabasePanel({ project, projects, onSelectProject }: Pr
   const [insertValues, setInsertValues] = useState<Record<string, string>>({});
   const [showNewTable, setShowNewTable] = useState(false);
   const [showInsert, setShowInsert] = useState(false);
+  const [editingRow, setEditingRow] = useState<number | null>(null);
+  const [editValues, setEditValues] = useState<Record<string, string>>({});
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmDeleteName, setConfirmDeleteName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -32,6 +36,7 @@ export default function DatabasePanel({ project, projects, onSelectProject }: Pr
     let active = true;
     setDatabases([]); setDatabase(""); setTables([]); setTable(""); setTableData(null);
     setError(""); setNotice(""); setShowNewTable(false); setShowInsert(false);
+    setEditingRow(null); setConfirmDelete(false); setConfirmDeleteName("");
     if (!projectId) return;
     invoke<DatabaseInfo[]>("list_sqlite_databases", { projectId }).then(result => {
       if (active) { setDatabases(result); setDatabase(result[0]?.name ?? ""); }
@@ -42,6 +47,7 @@ export default function DatabasePanel({ project, projects, onSelectProject }: Pr
   useEffect(() => {
     let active = true;
     setTables([]); setTable(""); setTableData(null); setShowInsert(false); setShowNewTable(false);
+    setConfirmDelete(false); setConfirmDeleteName(""); setEditingRow(null);
     if (!projectId || !database) return;
     invoke<string[]>("list_sqlite_tables", { projectId, database }).then(result => {
       if (active) { setTables(result); setTable(result[0] ?? ""); }
@@ -51,7 +57,7 @@ export default function DatabasePanel({ project, projects, onSelectProject }: Pr
 
   useEffect(() => {
     let active = true;
-    setTableData(null); setShowInsert(false); setInsertValues({});
+    setTableData(null); setShowInsert(false); setInsertValues({}); setEditingRow(null);
     if (!projectId || !database || !table) return;
     invoke<TableData>("read_sqlite_table", { projectId, database, table }).then(result => {
       if (active) setTableData(result);
@@ -167,6 +173,54 @@ export default function DatabasePanel({ project, projects, onSelectProject }: Pr
     } catch(e) {setError(String(e));}
     finally {setBusy(false);}
   }
+
+  async function archiveDatabase() {
+    if (!projectId || !database || confirmDeleteName !== database || busy) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const archivedPath = await invoke<string>("delete_sqlite_database", {
+        projectId, database, confirmation: confirmDeleteName
+      });
+      const items = await invoke<DatabaseInfo[]>("list_sqlite_databases", { projectId });
+      setDatabases(items);
+      setDatabase(items[0]?.name ?? "");
+      setConfirmDelete(false); setConfirmDeleteName("");
+      setNotice("Datenbank aus dem Projekt entfernt und sicher archiviert unter: " + archivedPath);
+    } catch (e) { setError("Entfernen fehlgeschlagen: " + String(e)); }
+    finally { setBusy(false); }
+  }
+
+  function beginEdit(row: (string | number | null)[]) {
+    if (!tableData) return;
+    const idIndex = tableData.columns.findIndex(c => c.primaryKey && c.name === "id" && c.dataType.toUpperCase() === "INTEGER");
+    if (idIndex < 0 || typeof row[idIndex] !== "number" || !Number.isSafeInteger(row[idIndex])) {
+      setError("Dieser Datensatz kann nicht sicher über eine ganzzahlige ID bearbeitet werden.");
+      return;
+    }
+    const next: Record<string, string> = {};
+    tableData.columns.forEach((column,index) => {
+      if (!column.primaryKey) next[column.name] = row[index] == null ? "" : String(row[index]);
+    });
+    setEditingRow(row[idIndex] as number);
+    setEditValues(next); setShowInsert(false); setError("");
+  }
+
+  async function saveEditedRow(event: FormEvent) {
+    event.preventDefault();
+    if (busy || !projectId || !database || !table || !tableData || editingRow === null) return;
+    setBusy(true); setError("");
+    try {
+      const values = tableData.columns.filter(c => !c.primaryKey).map(c => ({
+        name: c.name, value: editValues[c.name] === "" && !c.notNull ? null : (editValues[c.name] ?? "")
+      }));
+      await invoke("update_sqlite_row",{ projectId, database, table, id: editingRow, values });
+      setEditingRow(null);
+      await refreshRows();
+      setNotice("Datensatz aktualisiert.");
+    } catch (e) { setError("Datensatz konnte nicht bearbeitet werden: " + String(e)); }
+    finally { setBusy(false); }
+  }
+
   if (!project) return <div className="empty"><h2>Projekt auswählen</h2><p>Erstelle zuerst ein Projekt, um SQLite-Datenbanken anzulegen.</p></div>;
   const currentDb=databases.find(db => db.name === database);
   return <section>
@@ -211,8 +265,22 @@ export default function DatabasePanel({ project, projects, onSelectProject }: Pr
             <div><p className="eyebrow">SQLITE DATABASE</p><h2>{currentDb.name}</h2>
               <p className="db-file-path" title={currentDb.path}>{currentDb.path}</p></div>
             <div className="db-controls"><button className="secondary" disabled={busy} onClick={() => void exportDatabase()}>Sicherung exportieren</button>
-            <button className="secondary" disabled={busy} onClick={() => void refreshAll()}>Aktualisieren</button></div>
+            <button className="secondary" disabled={busy} onClick={() => void refreshAll()}>Aktualisieren</button>
+              <button className="subtle danger" disabled={busy} onClick={() => setConfirmDelete(!confirmDelete)}>Datenbank entfernen</button></div>
           </div>
+          {confirmDelete && <div className="db-delete-panel">
+            <h3>Datenbank „{database}“ entfernen</h3>
+            <p>Die Datenbank wird aus dem Projekt entfernt und im App-Datenverzeichnis archiviert. Bei aktiven Journaldateien wird das Entfernen verweigert.</p>
+            <label>Bestätigung: Datenbanknamen exakt eingeben
+              <input value={confirmDeleteName} onChange={e => setConfirmDeleteName(e.target.value)}
+                placeholder={database} autoComplete="off"/>
+            </label>
+            <div className="db-controls">
+              <button className="secondary" onClick={() => { setConfirmDelete(false); setConfirmDeleteName(""); }}>Abbrechen</button>
+              <button className="primary" disabled={busy || confirmDeleteName !== database}
+                onClick={() => void archiveDatabase()}>Datenbank jetzt entfernen</button>
+            </div>
+          </div>}
           <div className="section-head">
             <div><h3>Tabellen</h3><p>Wähle eine Tabelle zum Anzeigen und Einfügen von Datensätzen.</p></div>
             <button className="secondary" disabled={busy} onClick={()=>{setShowNewTable(!showNewTable);setShowInsert(false);}}>+ Tabelle</button>
@@ -258,9 +326,23 @@ export default function DatabasePanel({ project, projects, onSelectProject }: Pr
               <div className="db-controls"><button className="secondary" type="button" onClick={()=>setShowInsert(false)}>Abbrechen</button>
                 <button className="primary" type="submit" disabled={busy}>Speichern</button></div>
             </form>}
+            {editingRow !== null && tableData && <form className="db-form" onSubmit={e => void saveEditedRow(e)}>
+              <h3>Datensatz #{editingRow} bearbeiten</h3>
+              <div className="db-insert-grid">{tableData.columns.filter(c => !c.primaryKey).map(c =>
+                <label key={c.name}>{c.name} <small>({c.dataType})</small>
+                  <input value={editValues[c.name] ?? ""} onChange={e => setEditValues(v => ({ ...v, [c.name]: e.target.value }))}/>
+                </label>)}</div>
+              <div className="db-controls">
+                <button type="button" className="secondary" onClick={() => setEditingRow(null)}>Abbrechen</button>
+                <button type="submit" className="primary" disabled={busy}>Änderungen speichern</button>
+              </div>
+            </form>}
             {tableData ? <div className="db-scroll"><table className="db-data">
-              <thead><tr>{tableData.columns.map(c=><th key={c.name}>{c.name} <span>{c.dataType}</span></th>)}</tr></thead>
-              <tbody>{tableData.rows.map((row,i)=><tr key={i}>{row.map((value,j)=><td key={j} title={String(value??"NULL")}>{value===null?<em>NULL</em>:String(value)}</td>)}</tr>)}</tbody>
+              <thead><tr>{tableData.columns.map(c=><th key={c.name}>{c.name} <span>{c.dataType}</span></th>)}<th>Aktion</th></tr></thead>
+              <tbody>{tableData.rows.map((row,i)=><tr key={i}>{row.map((value,j)=><td key={j} title={String(value??"NULL")}>{value===null?<em>NULL</em>:String(value)}</td>)}<td>
+          <button className="secondary" disabled={busy || !tableData.columns.some(c => c.primaryKey && c.name === "id" && c.dataType.toUpperCase() === "INTEGER")}
+            onClick={() => beginEdit(row)}>Bearbeiten</button>
+        </td></tr>)}</tbody>
             </table>{tableData.rows.length===0 && <p className="empty-list">Noch keine Datensätze vorhanden.</p>}</div>
               :<p className="db-muted">Tabellendaten werden geladen …</p>}
             {tableData?.truncated && <p className="db-muted">Es werden nur die ersten 100 Zeilen angezeigt.</p>}

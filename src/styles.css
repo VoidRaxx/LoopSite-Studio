@@ -219,3 +219,20 @@ h1{font-size:27px;letter-spacing:-.75px}
   .log-time{display:none}
   .log-line{gap:7px;padding:4px 6px}
 }
+
+/* Database management controls */
+.db-delete-panel{display:grid;gap:12px;border:1px solid var(--danger);border-radius:11px;
+  padding:17px;background:rgba(180,40,60,.05);margin:12px 0}
+.db-delete-panel h3{font-size:14px;margin:0;color:var(--danger)}
+.db-delete-panel p{font-size:12px;color:var(--muted);line-height:1.5;margin:0}
+.db-delete-panel label,.db-service-start label{display:grid;gap:7px;font-size:12px;color:var(--muted)}
+.db-delete-panel input,.db-service-start select{border:1px solid var(--line);border-radius:8px;
+  padding:9px 11px;background:var(--bg);color:var(--text);min-width:0;width:100%}
+.db-service-start{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:10px;
+  border:1px solid var(--line);border-radius:10px;padding:13px;margin:14px 0}
+.db-service-start p{grid-column:1/-1;margin:0}
+.db-cell-edit{margin-left:9px;padding:2px 7px;border:1px solid var(--line);border-radius:5px;
+  color:var(--accent);background:var(--glass);font-size:12px}
+.db-data td{max-width:380px;overflow:hidden;text-overflow:ellipsis}
+.db-data td span{display:inline-block;max-width:275px;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
+@media(max-width:700px){.db-service-start{grid-template-columns:1fr}}

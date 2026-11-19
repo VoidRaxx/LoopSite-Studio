@@ -16,7 +16,7 @@ pub struct MariaManager(Mutex<Option<Connected>>);
 
 #[derive(Serialize)]
 #[serde(rename_all="camelCase")]
-pub struct MariaTableData { columns:Vec<String>, rows:Vec<Vec<serde_json::Value>>, truncated:bool }
+pub struct MariaTableData { columns:Vec<String>, rows:Vec<Vec<serde_json::Value>>, truncated:bool, primary_key:Option<String> }
 
 const MAX_ROWS: usize=100;
 
@@ -121,6 +121,115 @@ pub fn maria_list_tables(state:State<'_,MariaManager>,database:String)->Result<V
 }
 
 
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all="camelCase")]
+pub struct MariaColumn {
+    name: String,
+    data_type: String,
+    not_null: bool,
+}
+
+fn valid_column(name: &str) -> bool {
+    let b = name.as_bytes();
+    !b.is_empty() && b.len() <= 64 &&
+        (b[0].is_ascii_alphabetic() || b[0] == b'_') &&
+        b.iter().all(|c| c.is_ascii_alphanumeric() || *c == b'_')
+}
+
+fn maria_column_type(name: &str) -> Result<&'static str, String> {
+    match name {
+        "TEXT" => Ok("TEXT"),
+        "VARCHAR(255)" => Ok("VARCHAR(255)"),
+        "INTEGER" => Ok("INT"),
+        "BIGINT" => Ok("BIGINT"),
+        "DOUBLE" => Ok("DOUBLE"),
+        "DATETIME" => Ok("DATETIME"),
+        "BOOLEAN" => Ok("BOOLEAN"),
+        _ => Err("Unbekannter SQL-Datentyp.".into())
+    }
+}
+
+#[tauri::command]
+pub fn maria_create_table(
+    state: State<'_,MariaManager>, database:String, table:String, columns:Vec<MariaColumn>
+) -> Result<(),String> {
+    if system_name(&database) || !valid_column(&table)
+        || columns.is_empty() || columns.len()>24 {
+        return Err("Ungültige Tabelle oder Spaltenanzahl (1–24).".into());
+    }
+    let mut names=std::collections::HashSet::new();
+    names.insert("id".to_string());
+    let mut definitions=vec![format!("{} BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY", quoted("id")?)];
+    for c in columns {
+        if !valid_column(&c.name) || !names.insert(c.name.to_ascii_lowercase()) {
+            return Err("Spaltennamen dürfen nicht leer oder doppelt sein.".into());
+        }
+        let typ=maria_column_type(&c.data_type)?;
+        definitions.push(format!("{} {}{}",quoted(&c.name)?,typ,if c.not_null{" NOT NULL"}else{""}));
+    }
+    let sql=format!("CREATE TABLE {}.{} ({}) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        quoted(&database)?,quoted(&table)?,definitions.join(", "));
+    with_conn(state,|conn|conn.query_drop(sql).map_err(|e|format!("Tabelle konnte nicht erstellt werden: {e}")))
+}
+
+#[tauri::command]
+pub fn maria_delete_database(
+    state: State<'_,MariaManager>,database:String,confirmation:String
+) -> Result<(),String> {
+    if database!=confirmation || system_name(&database) {
+        return Err("Bestätigung stimmt nicht überein oder Systemdatenbank ist geschützt.".into());
+    }
+    let ident=quoted(&database)?;
+    with_conn(state,|conn|conn.query_drop(format!("DROP DATABASE {ident}"))
+        .map_err(|e|format!("Datenbank konnte nicht gelöscht werden: {e}")))
+}
+
+fn editable_key(conn:&mut Conn, database:&str, table:&str)->Result<Option<String>,String>{
+    let keys:Vec<String>=conn.exec(
+        "SELECT COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA=? AND TABLE_NAME=? AND CONSTRAINT_NAME='PRIMARY' ORDER BY ORDINAL_POSITION",
+        (database,table)
+    ).map_err(|e|e.to_string())?;
+    if keys.len()!=1 {return Ok(None);}
+    let kinds:Vec<String>=conn.exec(
+        "SELECT DATA_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? AND COLUMN_NAME=?",
+        (database,table, &keys[0])
+    ).map_err(|e|e.to_string())?;
+    if !matches!(kinds.first().map(String::as_str),
+        Some("bigint"|"int"|"integer"|"smallint"|"tinyint"|"mediumint"|"varchar"|"char")) {
+        return Ok(None);
+    }
+    Ok(keys.into_iter().next())
+}
+
+#[tauri::command]
+pub fn maria_update_cell(
+    state: State<'_,MariaManager>,database:String,table:String,
+    key_value:String,column:String,value:Option<String>
+) -> Result<(),String> {
+    if system_name(&database) || key_value.len()>255 || key_value.is_empty()
+        || value.as_ref().is_some_and(|v|v.len()>16_384) {
+        return Err("Ungültige Datenbank, Schlüssel oder Wert.".into());
+    }
+    let schema=quoted(&database)?;
+    let table_sql=quoted(&table)?;
+    let column_sql=quoted(&column)?;
+    with_conn(state, |conn|{
+        let key=editable_key(conn,&database,&table)?
+            .ok_or("Diese Tabelle benötigt einen einzelnen unterstützten Primärschlüssel, um Daten zu bearbeiten.")?;
+        if key==column {return Err("Primärschlüssel dürfen nicht geändert werden.".into());}
+        let column_exists:Option<i64>=conn.exec_first(
+            "SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? AND COLUMN_NAME=?",
+            (&database,&table,&column)
+        ).map_err(|e|e.to_string())?;
+        if column_exists.is_none() {return Err("Spalte nicht gefunden.".into());}
+        conn.exec_drop(format!(
+            "UPDATE {schema}.{table_sql} SET {column_sql}=? WHERE {}=? LIMIT 1",quoted(&key)?
+        ), (value.as_deref(), key_value.as_str()))
+            .map_err(|e|format!("Datensatz konnte nicht bearbeitet werden: {e}"))
+    })
+}
+
 fn projection(columns:&[(String,String)])->Result<String,String>{
     let mut expressions=Vec::with_capacity(columns.len());
     for (name,kind) in columns {
@@ -174,6 +283,7 @@ pub fn maria_read_table(state:State<'_,MariaManager>,database:String,table:Strin
         if schema_columns.is_empty(){return Err("Tabelle nicht gefunden oder keine Berechtigung.".into())}
         if schema_columns.len()>64{return Err("Maximal 64 Spalten können angezeigt werden.".into())}
         // Bound result payload per cell, including for multi-MiB BLOB columns.
+        let primary_key=editable_key(conn,&database,&table)?;
         let projection=projection(&schema_columns)?;
         let rows:Vec<Row>=conn.query(format!("SELECT {projection} FROM {schema}.{tbl} LIMIT {}",MAX_ROWS+1))
             .map_err(|e|e.to_string())?;
@@ -182,6 +292,7 @@ pub fn maria_read_table(state:State<'_,MariaManager>,database:String,table:Strin
             columns:schema_columns.into_iter().map(|(name,_)|name).collect(),
             rows:rows.into_iter().take(MAX_ROWS).map(|r|r.unwrap().into_iter().map(value_json).collect()).collect(),
             truncated,
+            primary_key,
         })
     })
 }
@@ -229,6 +340,13 @@ mod tests{
         })();
         conn.query_drop(format!("DROP DATABASE {}",quoted(&name).unwrap())).unwrap();
         result.unwrap();
+    }
+    #[test] fn create_columns_validate_types_and_names(){
+        assert!(valid_column("username"));
+        assert!(!valid_column("x;DROP"));
+        assert_eq!(maria_column_type("VARCHAR(255)").unwrap(),"VARCHAR(255)");
+        assert!(maria_column_type("VARCHAR(999999)").is_err());
+        assert!(maria_column_type("DROP TABLE").is_err());
     }
     #[test] fn masks_binary_values(){
         assert_eq!(value_json(Value::NULL),serde_json::Value::Null);

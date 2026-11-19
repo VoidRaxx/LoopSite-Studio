@@ -49,8 +49,15 @@ export default function App() {
   const [busy, setBusy] = useState(true);
   const [theme, setTheme] = useState<Theme>(() => {
     const saved = localStorage.getItem("loopsite-theme");
-    return saved === "dark" || saved === "white" ? saved : "hu";
+    if (saved === "hu") return "default";
+    return (["system","default","universe-dark","universe-light","dark","white"] as string[]).includes(saved ?? "") ? saved as Theme : "default";
   });
+  const [uiSize, setUiSize] = useState<"compact" | "normal" | "large">(() => {
+    const saved = localStorage.getItem("loopsite-ui-size");
+    return saved === "compact" || saved === "large" ? saved : "normal";
+  });
+  const [systemDark, setSystemDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
+  const activeTheme = theme === "system" ? (systemDark ? "dark" : "white") : theme;
   const [projectName, setProjectName] = useState("");
   const [projectRoot, setProjectRoot] = useState("");
   const [serverName, setServerName] = useState("");
@@ -71,9 +78,19 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
+    document.documentElement.dataset.theme = activeTheme;
     localStorage.setItem("loopsite-theme", theme);
-  }, [theme]);
+  }, [theme, activeTheme]);
+  useEffect(() => {
+    const query = window.matchMedia("(prefers-color-scheme: dark)");
+    const update = () => setSystemDark(query.matches);
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+  useEffect(() => {
+    document.documentElement.dataset.density = uiSize;
+    localStorage.setItem("loopsite-ui-size", uiSize);
+  }, [uiSize]);
 
   useEffect(() => {
     let alive = true;
@@ -348,15 +365,35 @@ export default function App() {
             Bestehende Server mit fest zugewiesener Version bleiben unverändert.
             Unter „Einrichtung“ kannst du fehlendes PHP über den System-Paketmanager installieren.</p>
         </div>
-      </section> : panel === "editor" ? <EditorPanel project={selected} projects={projects} theme={theme}
+      </section> : panel === "editor" ? <EditorPanel project={selected} projects={projects} theme={activeTheme}
         onSelectProject={switchEditorProject} onDirtyChange={setEditorDirty}/> : panel === "settings" ? <section>
         <div className="page-heading"><div><p className="eyebrow">ANPASSUNG</p><h1>Einstellungen</h1><p>Darstellung von LoopSite Studio.</p></div></div>
-        <div className="card settings"><h2>Design</h2><p>Wähle ein Theme. Die Auswahl wird lokal gespeichert.</p>
+        <div className="card settings"><h2>Theme</h2><p>System folgt automatisch dem hellen oder dunklen Modus des Betriebssystems. Alle Einstellungen werden lokal gespeichert.</p>
           <div className="theme-grid">
-            {(["hu","dark","white"] as Theme[]).map(id => <button key={id} className={"theme-select " + (theme === id ? "chosen" : "")} onClick={() => setTheme(id)}>
-              <span className={"theme-preview preview-" + id}></span>
-              <strong>{id === "hu" ? "HybrideUniverse" : id === "dark" ? "Dark" : "White"}</strong>
+            {([
+              {id:"system",label:"Systemstandard"},
+              {id:"default",label:"Default"},
+              {id:"universe-dark",label:"Universe Dark"},
+              {id:"universe-light",label:"Universe Light"},
+              {id:"dark",label:"Dark"},
+              {id:"white",label:"White"}
+            ] as {id: Theme;label: string}[]).map(item => <button key={item.id}
+              aria-pressed={theme === item.id} className={"theme-select " + (theme === item.id ? "chosen" : "")}
+              onClick={() => setTheme(item.id)}>
+              <span className={"theme-preview preview-" + item.id}></span>
+              <strong>{item.label}</strong>
             </button>)}
+          </div>
+          <div className="ui-size-settings">
+            <h3>UI-Größe</h3>
+            <p>Skaliert sämtliche Bedienelemente und Texte. Die Einstellung wird gespeichert.</p>
+            <div className="ui-size-options" role="group" aria-label="Größe der Benutzeroberfläche">
+              {(["compact","normal","large"] as const).map(size =>
+                <button key={size} className={uiSize === size ? "secondary selected" : "secondary"}
+                  aria-pressed={uiSize === size} onClick={() => setUiSize(size)}>
+                  {size === "compact" ? "Compact" : size === "normal" ? "Normal" : "Large"}
+                </button>)}
+            </div>
           </div>
         </div>
       </section> : panel === "routing" ? <section>

@@ -8,6 +8,7 @@ mod executables;
 mod php;
 mod sqlite;
 mod maria;
+mod maria_service;
 mod install;
 
 fn main() {
@@ -48,13 +49,19 @@ fn main() {
             sqlite::insert_sqlite_row,
             sqlite::import_sqlite_database,
             sqlite::export_sqlite_database,
+            sqlite::delete_sqlite_database,
+            sqlite::update_sqlite_row,
             maria::maria_connect,
             maria::maria_status,
             maria::maria_disconnect,
             maria::maria_list_databases,
             maria::maria_create_database,
             maria::maria_list_tables,
-            maria::maria_read_table
+            maria::maria_read_table,
+            maria::maria_delete_database,
+            maria::maria_create_table,
+            maria::maria_update_cell,
+            maria_service::start_local_mariadb_service
         ])
         .on_window_event(|window, event| {
             if matches!(event, tauri::WindowEvent::Destroyed) {

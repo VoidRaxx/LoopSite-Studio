@@ -143,7 +143,7 @@ export default function EditorPanel({
           path={"file:///" + projectId + "/" + path}
           language={language(path)}
           value={tab.content}
-          theme={theme === "white" ? "vs" : "vs-dark"}
+          theme={theme === "white" || theme === "universe-light" ? "vs" : "vs-dark"}
           options={{
             automaticLayout: true, minimap: { enabled: false }, fontSize: 12,
             lineNumbersMinChars: 3, wordWrap: "on", scrollBeyondLastLine: false,

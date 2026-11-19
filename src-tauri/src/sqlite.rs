@@ -228,6 +228,91 @@ pub fn export_sqlite_database(
     consistent_copy(&source, Path::new(&destination))
 }
 
+
+fn archive_database_in_dir(dir: &Path, name: &str) -> Result<String, String> {
+    let file = database_path(dir, name)?;
+    let md = fs::symlink_metadata(&file).map_err(|e| format!("Datenbank existiert nicht: {e}"))?;
+    if !md.file_type().is_file() || md.file_type().is_symlink() {
+        return Err("Keine reguläre Datenbankdatei.".into());
+    }
+    // Refuse to move active WAL/journal databases; moving only the main file
+    // could otherwise lose committed-but-uncheckpointed data.
+    for suffix in ["-wal", "-shm", "-journal"] {
+        let sidecar = std::ffi::OsString::from(format!("{}{}", file.display(), suffix));
+        if Path::new(&sidecar).exists() {
+            return Err("Datenbank wird möglicherweise noch benutzt. Bitte alle Verbindungen schließen und erneut versuchen.".into());
+        }
+    }
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH).map_err(|e| e.to_string())?.as_nanos();
+    let archive_root = dir.parent().ok_or("Archivverzeichnis fehlt.")?
+        .join("sqlite-archive").join(dir.file_name().ok_or("Projektordner fehlt.")?);
+    fs::create_dir_all(&archive_root).map_err(|e| e.to_string())?;
+    let folder = archive_root.join(format!("{name}-{stamp}-{}", std::process::id()));
+    fs::create_dir(&folder).map_err(|e| e.to_string())?;
+    let target = folder.join(format!("{name}.sqlite3"));
+    if let Err(err) = fs::rename(&file, &target) {
+        let _ = fs::remove_dir(&folder);
+        return Err(format!("Datenbank konnte nicht archiviert werden: {err}"));
+    }
+    Ok(target.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+pub fn delete_sqlite_database(
+    app: AppHandle, project_id: String, database: String, confirmation: String,
+) -> Result<String, String> {
+    if database != confirmation {
+        return Err("Der eingegebene Bestätigungsname stimmt nicht überein.".into());
+    }
+    let dir = database_dir(&app, &project_id)?;
+    archive_database_in_dir(&dir, &database)
+}
+
+// Row editing is restricted to tables with exactly one INTEGER PRIMARY KEY
+// named "id". Imported tables with composite/unusual keys stay read-only.
+fn update_row_in_dir(
+    dir: &Path, db: &str, table: &str, id: i64, values: &[InsertValue],
+) -> Result<(), String> {
+    if values.is_empty() || values.len() > MAX_COLUMNS {
+        return Err("Mindestens eine Spalte bearbeiten.".into());
+    }
+    let conn = open_database(dir, db, true)?;
+    let cols = columns_of(&conn, table)?;
+    let id_cols:Vec<_> = cols.iter().filter(|c| c.primary_key).collect();
+    if id_cols.len() != 1 || id_cols[0].name != "id"
+        || !id_cols[0].data_type.eq_ignore_ascii_case("INTEGER") {
+        return Err("Bearbeiten ist nur für Tabellen mit INTEGER PRIMARY KEY id verfügbar.".into());
+    }
+    let allowed:HashSet<&str> = cols.iter().filter(|c| !c.primary_key)
+        .map(|c| c.name.as_str()).collect();
+    let mut seen = HashSet::new();
+    for value in values {
+        if !allowed.contains(value.name.as_str()) || !seen.insert(value.name.as_str())
+            || value.value.as_ref().is_some_and(|v| v.len() > 16_384) {
+            return Err("Ungültiger oder mehrfach angegebener Spaltenwert (max. 16 KiB).".into());
+        }
+    }
+    let fields = values.iter().enumerate()
+        .map(|(index, v)| format!("{}=?{}", sql_identifier(&v.name), index + 1))
+        .collect::<Vec<_>>().join(",");
+    let query = format!("UPDATE {} SET {} WHERE \"id\"=?{}",sql_identifier(table), fields,values.len()+1);
+    let affected = conn.execute(&query, params_from_iter(
+        values.iter().map(|v| v.value.clone()).chain(std::iter::once(Some(id.to_string())))
+    )).map_err(|e|format!("Bearbeiten fehlgeschlagen: {e}"))?;
+    if affected != 1 {return Err("Datensatz nicht mehr vorhanden.".into());}
+    Ok(())
+}
+
+#[tauri::command]
+pub fn update_sqlite_row(
+    app: AppHandle, project_id: String, database: String, table: String, id: i64,
+    values: Vec<InsertValue>
+) -> Result<(), String> {
+    let dir = database_dir(&app,&project_id)?;
+    update_row_in_dir(&dir, &database, &table, id, &values)
+}
+
 fn create_table_in_dir(dir:&Path,db:&str,table:&str,columns:&[NewColumn]) -> Result<(),String> {
     if !identifier(table) || table.starts_with("sqlite_") {return Err("Ungültiger Tabellenname.".into())}
     if columns.is_empty() || columns.len()>MAX_COLUMNS {return Err("Bitte 1 bis 24 Spalten angeben.".into())}
@@ -446,6 +531,34 @@ mod tests {
         assert!(import_in_dir(&imported_dir,"../unsafe",&invalid).is_err());
         fs::remove_dir_all(dir).unwrap();
         fs::remove_dir_all(imported_dir).unwrap();
+    }
+
+    #[test]
+    fn editing_rows_and_archiving_databases() {
+        let dir=temp();
+        create_db_in_dir(&dir,"edited").unwrap();
+        create_table_in_dir(&dir,"edited","users",&[
+            NewColumn{name:"username".into(),data_type:"TEXT".into(),not_null:true}
+        ]).unwrap();
+        insert_in_dir(&dir,"edited","users",&[
+            InsertValue{name:"username".into(),value:Some("old".into())}
+        ]).unwrap();
+        update_row_in_dir(&dir,"edited","users",1,&[
+            InsertValue{name:"username".into(),value:Some("new".into())}
+        ]).unwrap();
+        assert_eq!(read_table_in_dir(&dir,"edited","users").unwrap().rows[0][1],"new");
+        assert!(update_row_in_dir(&dir,"edited","users",999,&[
+            InsertValue{name:"username".into(),value:Some("x".into())}
+        ]).is_err());
+        assert!(update_row_in_dir(&dir,"edited","users",1,&[
+            InsertValue{name:"id".into(),value:Some("999".into())}
+        ]).is_err());
+        let archived=archive_database_in_dir(&dir,"edited").unwrap();
+        assert!(!dir.join("edited.sqlite3").exists());
+        assert!(Path::new(&archived).exists());
+        assert!(archive_database_in_dir(&dir,"edited").is_err());
+        fs::remove_dir_all(dir.parent().unwrap().join("sqlite-archive").join(dir.file_name().unwrap())).unwrap();
+        fs::remove_dir_all(dir).unwrap();
     }
 
 }
