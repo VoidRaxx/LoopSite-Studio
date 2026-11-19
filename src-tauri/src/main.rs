@@ -6,6 +6,7 @@ mod proxy;
 mod editor;
 mod executables;
 mod php;
+mod sqlite;
 
 fn main() {
     let manager = servers::ServerManager::default();
@@ -29,7 +30,13 @@ fn main() {
             editor::read_project_file,
             editor::save_project_file,
             php::list_php_runtimes,
-            php::register_php_runtime
+            php::register_php_runtime,
+            sqlite::create_sqlite_database,
+            sqlite::list_sqlite_databases,
+            sqlite::create_sqlite_table,
+            sqlite::list_sqlite_tables,
+            sqlite::read_sqlite_table,
+            sqlite::insert_sqlite_row
         ])
         .on_window_event(|window, event| {
             if matches!(event, tauri::WindowEvent::Destroyed) {

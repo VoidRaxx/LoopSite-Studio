@@ -31,11 +31,12 @@ Early development. **No stable production release yet.** Desktop build artifacts
 - Local HTTP domain routing through an externally installed Caddy executable
 - Offline Monaco file editor: browsing, tabs, syntax highlighting, search, replace and guarded saves
 - HybrideUniverse / Dark / White themes
+- Native SQLite database manager: create project databases and tables, preview data, and insert rows
 
 ### Not implemented yet
 
 - Managed PHP/Caddy runtime installation and version switching
-- MariaDB/SQLite instance management, phpMyAdmin integration
+- MariaDB instance management and phpMyAdmin integration; additional SQLite import/export and advanced SQL tooling
 - Automatic local HTTPS certificate and arbitrary hostname resolution setup
 - Reliable packaged releases verified by installer and runtime smoke tests
 
