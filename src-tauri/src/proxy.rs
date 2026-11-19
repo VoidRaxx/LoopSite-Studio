@@ -219,7 +219,7 @@ mod tests {
             id: "project".into(), name: "Website".into(), root_path: "/tmp".into(),
             servers: vec![projects::ServerConfig {
                 id: "server".into(), name: "PHP".into(), root_path: "/tmp".into(),
-                port: 8000, runtime: "php".into(), router_file: None, lan_access: false,
+                port: 8000, runtime: "php".into(), php_executable_path: None, router_file: None, lan_access: false,
             }],
             domains: vec![
                 projects::DomainRoute { id:"d1".into(), hostname:"demo.localhost".into(), server_id:"server".into(), https:false },
