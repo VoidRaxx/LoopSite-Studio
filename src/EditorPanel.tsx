@@ -37,13 +37,17 @@ export default function EditorPanel({
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activePath, setActivePath] = useState<string | null>(null);
+  const [secondaryPath, setSecondaryPath] = useState<string | null>(null);
+  const [treeWidth, setTreeWidth] = useState(215);
+  const resizing = useRef(false);
+  const layoutRef = useRef<HTMLDivElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const saveAction = useRef<() => void>(() => {});
+  const saveAction = useRef<(path: string) => void>(() => {});
   const projectId = project?.id;
 
   useEffect(() => {
-    setDirectory(""); setTabs([]); setActivePath(null);
+    setDirectory(""); setTabs([]); setActivePath(null); setSecondaryPath(null);
     setEntries([]); setError(""); onDirtyChange(false);
   }, [projectId, onDirtyChange]);
 
@@ -91,6 +95,7 @@ export default function EditorPanel({
     const next = tabs.filter(t => t.path !== path);
     setTabs(next);
     if (activePath === path) setActivePath(next[next.length - 1]?.path ?? null);
+    if (secondaryPath === path) setSecondaryPath(null);
   }
 
   async function saveTab(path: string) {
@@ -110,7 +115,52 @@ export default function EditorPanel({
     } finally { setBusy(false); }
   }
 
-  saveAction.current = () => { if (activePath) void saveTab(activePath); };
+  saveAction.current = path => { void saveTab(path); };
+
+  function resizeTo(clientX: number) {
+    const bounds = layoutRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    setTreeWidth(Math.max(160, Math.min(450, Math.min(bounds.width - 250, clientX - bounds.left))));
+  }
+
+  function codePane(path: string, right: boolean) {
+    const tab = tabs.find(t => t.path === path);
+    if (!tab) return null;
+    const dirty = tab.content !== tab.savedContent;
+    return <div className="editor-code-pane" key={(right ? "right:" : "left:") + path}>
+      <div className="editor-toolbar">
+        <span title={path}>{right ? "Zweite Ansicht · " : ""}{path}</span>
+        <div className="editor-toolbar-actions">
+          <button className="secondary" disabled={busy || !dirty} onClick={() => void saveTab(path)}>
+            Speichern{dirty ? " ●" : ""}
+          </button>
+          {right && <button className="icon-button" onClick={() => setSecondaryPath(null)}
+            aria-label="Zweite Ansicht schließen" title="Zweite Ansicht schließen">×</button>}
+        </div>
+      </div>
+      <div className="editor-monaco">
+        <MonacoEditor
+          path={"file:///" + projectId + "/" + path}
+          language={language(path)}
+          value={tab.content}
+          theme={theme === "white" ? "vs" : "vs-dark"}
+          options={{
+            automaticLayout: true, minimap: { enabled: false }, fontSize: 12,
+            lineNumbersMinChars: 3, wordWrap: "on", scrollBeyondLastLine: false,
+            tabSize: 2, autoClosingBrackets: "always", smoothScrolling: true,
+            padding: { top: 12 },
+          }}
+          onChange={value => setTabs(current => current.map(t =>
+            t.path === path ? { ...t, content: value ?? "" } : t))}
+          onMount={(editor, monaco) => {
+            editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS,
+              () => saveAction.current(path));
+            if (!right) editor.onDidFocusEditorWidget(() => setActivePath(path));
+          }}
+        />
+      </div>
+    </div>;
+  }
 
   if (!project) {
     return <div className="empty"><h2>Kein Projekt ausgewählt</h2>
@@ -120,67 +170,78 @@ export default function EditorPanel({
   return <section className="editor-page">
     <div className="page-heading">
       <div><p className="eyebrow">LOCAL FILE EDITOR</p><h1>Datei-Editor</h1>
-        <p>UTF-8-Dateien bearbeiten. Suche mit Strg+F, Ersetzen mit Strg+H, Speichern mit Strg+S.</p></div>
+        <p>Mehrere Dateien in Tabs · Zwei Ansichten nebeneinander · Strg+F / Strg+H / Strg+S.</p></div>
       <label className="editor-project-choice">Projekt
         <select value={project.id} onChange={event => onSelectProject(event.target.value)}>
           {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
       </label>
     </div>
-    <div className="editor-layout">
+    <div className="editor-layout" ref={layoutRef}
+      style={{ gridTemplateColumns: treeWidth + "px 7px minmax(0,1fr)" }}>
       <aside className="editor-files">
         <div className="editor-path-header">
           <strong>Dateien</strong>
+          <span>{tabs.length} geöffnet</span>
           <button className="icon-button" title="Übergeordneten Ordner öffnen"
             disabled={!directory || busy} onClick={() => setDirectory(dirname(directory))}>↑</button>
         </div>
         <div className="editor-path" title={directory || project.rootPath}>{directory || "/"}</div>
         <div className="editor-file-list">
-          {entries.map(entry => <button key={entry.path} className="editor-entry"
+          {directory && <button className="editor-entry editor-parent"
+            onClick={() => setDirectory(dirname(directory))}>← ..</button>}
+          {entries.map(entry => <button key={entry.path}
+            className={"editor-entry " + (!entry.isDir && tabs.some(t => t.path === entry.path) ? "opened" : "")}
+            title={entry.path}
+            disabled={busy}
             onClick={() => entry.isDir ? setDirectory(entry.path) : void openFile(entry.path)}>
             <span aria-hidden="true">{entry.isDir ? "▣" : "▤"}</span>
-            <span title={entry.path}>{entry.name}</span>
+            <span>{entry.name}</span>
+            {!entry.isDir && tabs.some(t => t.path === entry.path) && <span aria-label="Geöffnet">•</span>}
           </button>)}
           {!busy && entries.length === 0 && <p className="empty-list">Keine Dateien vorhanden.</p>}
         </div>
       </aside>
+      <div className="editor-splitter" role="separator" tabIndex={0}
+        aria-label="Dateiliste breiter oder schmaler ziehen" aria-orientation="vertical"
+        aria-valuemin={160} aria-valuemax={450} aria-valuenow={treeWidth}
+        onPointerDown={event => {
+          resizing.current = true;
+          event.currentTarget.setPointerCapture(event.pointerId);
+        }}
+        onPointerMove={event => { if (resizing.current) resizeTo(event.clientX); }}
+        onPointerUp={() => { resizing.current = false; }}
+        onPointerCancel={() => { resizing.current = false; }}
+        onKeyDown={event => {
+          if (event.key === "ArrowLeft") { event.preventDefault(); setTreeWidth(w => Math.max(160, w - 20)); }
+          if (event.key === "ArrowRight") { event.preventDefault(); setTreeWidth(w => Math.min(450, w + 20)); }
+        }}/>
       <div className="editor-main">
         <div className="editor-tabs" role="tablist" aria-label="Geöffnete Dateien">
           {tabs.map(tab => <div key={tab.path} className={"editor-tab " + (activePath === tab.path ? "selected" : "")}>
-            <button role="tab" aria-selected={activePath === tab.path}
-              title={tab.path} onClick={() => setActivePath(tab.path)}>
-              {basename(tab.path)}{tab.content !== tab.savedContent && <span aria-label="Ungespeichert"> ●</span>}
+            <button role="tab" aria-selected={activePath === tab.path} title={tab.path}
+              onClick={() => setActivePath(tab.path)}>
+              {basename(tab.path)}{tab.content !== tab.savedContent && <span className="editor-dirty" aria-label="Ungespeichert"> ●</span>}
             </button>
+            <button className="editor-tab-side" title="In zweiter Ansicht öffnen"
+              aria-label={basename(tab.path) + " rechts anzeigen"} onClick={() => setSecondaryPath(tab.path)}>⇄</button>
             <button className="editor-tab-close" aria-label={basename(tab.path) + " schließen"}
               onClick={() => closeTab(tab.path)}>×</button>
           </div>)}
+          {tabs.length === 0 && <span className="editor-tabs-hint">Dateien links anklicken – mehrere Tabs und zweite Ansicht möglich</span>}
         </div>
-        {activeTab ? <>
-          <div className="editor-toolbar">
-            <span title={activeTab.path}>{activeTab.path}</span>
-            <button className="primary" disabled={busy || activeTab.content === activeTab.savedContent}
-              onClick={() => void saveTab(activeTab.path)}>Speichern</button>
-          </div>
-          <div className="editor-monaco">
-            <MonacoEditor
-              path={"file:///" + project.id + "/" + activeTab.path}
-              language={language(activeTab.path)}
-              value={activeTab.content}
-              theme={theme === "white" ? "vs" : "vs-dark"}
-              options={{ automaticLayout: true, minimap: { enabled: false }, fontSize: 13,
-                wordWrap: "on", scrollBeyondLastLine: false, tabSize: 2, autoClosingBrackets: "always" }}
-              onChange={value => setTabs(current => current.map(t =>
-                t.path === activeTab.path ? { ...t, content: value ?? "" } : t))}
-              onMount={(editor, monaco) => {
-                editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS,
-                  () => saveAction.current());
-              }}
-            />
-          </div>
-        </> : <div className="editor-placeholder">
+        {activeTab ? <div className={"editor-code-grid" + (secondaryPath ? " split" : "")}>
+          {codePane(activeTab.path, false)}
+          {secondaryPath && codePane(secondaryPath, true)}
+        </div> : <div className="editor-placeholder">
           <h3>Eine Datei auswählen</h3>
-          <p>Wähle links eine Datei aus deinem Projektordner aus. PHP, HTML, CSS und JavaScript werden hervorgehoben.</p>
+          <p>Links Dateien öffnen · Tabs wechseln · ⇄ für zwei Dateien nebeneinander.
+            Die Trennlinie ist mit der Maus verschiebbar.</p>
         </div>}
+        <div className="editor-statusbar">
+          <span>{activeTab ? activeTab.path : "Keine Datei geöffnet"}</span>
+          <span>{activeTab ? language(activeTab.path).toUpperCase() : "UTF-8"} · {tabs.length} Tabs</span>
+        </div>
       </div>
     </div>
     {error && <div className="notice error" role="alert">{error}

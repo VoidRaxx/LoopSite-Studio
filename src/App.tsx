@@ -6,6 +6,7 @@ import type { DomainRoute, Project, Runtime, ServerConfig, Theme } from "./types
 import EditorPanel from "./EditorPanel";
 import DatabasePanel from "./DatabasePanel";
 import MariaPanel from "./MariaPanel";
+import LogViewer, { type LogTarget } from "./LogViewer";
 import RuntimeInstallPanel from "./RuntimeInstallPanel";
 
 type Panel = "projects" | "routing" | "editor" | "php" | "databases" | "setup" | "settings";
@@ -40,8 +41,7 @@ export default function App() {
   const [proxyPort, setProxyPort] = useState("8080");
   const [proxyBusy, setProxyBusy] = useState(false);
   const [running, setRunning] = useState<RunningServer[]>([]);
-  const [activeLog, setActiveLog] = useState<string | null>(null);
-  const [logText, setLogText] = useState("");
+  const [logTarget, setLogTarget] = useState<LogTarget | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [panel, setPanel] = useState<Panel>("projects");
   const [dialog, setDialog] = useState<Dialog>(null);
@@ -105,11 +105,8 @@ export default function App() {
       setError("Domain-Routing: " + getError(err));
     } finally { setProxyBusy(false); }
   }
-  async function showProxyLog() {
-    try {
-      const log = await invoke<string>("read_proxy_log");
-      setLogText(log); setActiveLog("proxy");
-    } catch (err) { setError("Proxy-Log: " + getError(err)); }
+  function showProxyLog() {
+    setLogTarget({ kind: "proxy", title: "Caddy · Reverse Proxy" });
   }
   async function openDomainUrl(hostname: string) {
     if (!proxy.running || proxy.port === null) return;
@@ -125,12 +122,11 @@ export default function App() {
     } catch (err) { setError("Server konnte nicht " + (isRunning ? "gestoppt" : "gestartet") + " werden: " + getError(err)); }
     finally { setBusy(false); }
   }
-  async function showLog(projectId: string, serverId: string) {
-    setError("");
-    try {
-      const log = await invoke<string>("read_server_log", { projectId, serverId });
-      setLogText(log); setActiveLog(serverId);
-    } catch (err) { setError("Log konnte nicht geöffnet werden: " + getError(err)); }
+  function showLog(projectId: string, serverId: string) {
+    const project = projects.find(p => p.id === projectId);
+    const server = project?.servers.find(s => s.id === serverId);
+    setLogTarget({ kind: "php", projectId, serverId,
+      title: (project?.name ?? "Projekt") + " / " + (server?.name ?? "PHP") });
   }
   async function openServerUrl(port: number) {
     try { await openUrl("http://127.0.0.1:" + port); }
@@ -441,7 +437,7 @@ export default function App() {
         </div>
       </section>}
     </main>
-    {activeLog && <div className="overlay" onMouseDown={e => { if (e.target === e.currentTarget) setActiveLog(null); }}><div className="modal"><h2>{activeLog === "proxy" ? "Reverse-Proxy-Protokoll" : "PHP-Serverprotokoll"}</h2><pre style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere",maxHeight:"55vh",overflow:"auto",fontSize:12}}>{logText || "Keine Ausgabe vorhanden."}</pre><button className="secondary" onClick={() => setActiveLog(null)}>Schließen</button></div></div>}
+    {logTarget && <LogViewer target={logTarget} onClose={() => setLogTarget(null)} />}
     {dialog && <div className="overlay" onMouseDown={event => { if (event.target === event.currentTarget && !busy) setDialog(null); }}>
       <form className="modal" onSubmit={event => { event.preventDefault(); void (dialog === "project" ? createProject() : dialog === "server" ? createServer() : createDomain()); }}>
         <h2>{dialog === "project" ? "Neues Projekt" : dialog === "server" ? (editingServerId ? "Server bearbeiten" : "Server hinzufügen") : "Domain hinzufügen"}</h2>

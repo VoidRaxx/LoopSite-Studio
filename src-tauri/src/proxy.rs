@@ -189,6 +189,15 @@ pub fn read_proxy_log(app: AppHandle) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
+
+#[tauri::command]
+pub fn clear_proxy_log(app: AppHandle) -> Result<(), String> {
+    let log_path = app.path().app_log_dir().map_err(|e| e.to_string())?.join("local-proxy.log");
+    OpenOptions::new().write(true).truncate(true).open(log_path)
+        .map_err(|e| format!("Proxy-Log konnte nicht geleert werden: {e}"))?;
+    Ok(())
+}
+
 impl ProxyManager {
     pub fn stop_all(&self) {
         if let Ok(mut lock) = self.0.lock() {

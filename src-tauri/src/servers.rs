@@ -59,23 +59,54 @@ fn port_address(port: u16, lan_access: bool) -> SocketAddr {
     }), port)
 }
 
+// Windows canonicalize() yields verbatim paths (\\?\C:\...) that PHP's CLI
+// router resolution may fail to open. Convert only process arguments back to
+// normal Win32 paths; keep canonical paths for security checks.
+#[cfg(windows)]
+fn php_argument_path(path: &Path) -> String {
+    let original = path.to_string_lossy();
+    if let Some(unc) = original.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{unc}")
+    } else if let Some(local) = original.strip_prefix(r"\\?\") {
+        local.to_string()
+    } else {
+        original.into_owned()
+    }
+}
+
+#[cfg(not(windows))]
+fn php_argument_path(path: &Path) -> String {
+    path.to_string_lossy().into_owned()
+}
+
+fn php_server_args(root: &Path, router: Option<&str>, addr: SocketAddr) -> Result<Vec<String>, String> {
+    let mut args = vec!["-S".to_string(), addr.to_string(), "-t".into(), php_argument_path(root)];
+    if let Some(router) = router {
+        let candidate = root.join(router);
+        let canonical = candidate.canonicalize()
+            .map_err(|_| format!("Router-Datei existiert nicht: {}", candidate.display()))?;
+        if !canonical.starts_with(root) || !canonical.is_file() {
+            return Err("Router muss eine PHP-Datei innerhalb des Serververzeichnisses sein.".into());
+        }
+        if !canonical.extension().and_then(|x| x.to_str())
+            .is_some_and(|x| x.eq_ignore_ascii_case("php")) {
+            return Err("Als PHP-Router kann nur eine vorhandene .php-Datei verwendet werden.".into());
+        }
+        // PHP -S resolves this path relative to current_dir(root).
+        // Passing canonical Windows \\?\ paths breaks request handling.
+        let relative = canonical.strip_prefix(root).map_err(|e| e.to_string())?;
+        args.push(php_argument_path(relative));
+    }
+    Ok(args)
+}
+
 fn run_php(
     app: &AppHandle,
     cfg: &projects::ServerConfig,
     root: &Path,
     addr: SocketAddr,
 ) -> Result<(Worker, PathBuf), String> {
-    let mut args = vec!["-S".to_string(), addr.to_string(), "-t".to_string(), root.display().to_string()];
-    if let Some(router) = &cfg.router_file {
-        let candidate = root.join(router);
-        let absolute = candidate
-            .canonicalize()
-            .map_err(|_| format!("Router-Datei existiert nicht: {}", candidate.display()))?;
-        if !absolute.starts_with(root) || !absolute.is_file() {
-            return Err("Router muss innerhalb des Serververzeichnisses liegen.".into());
-        }
-        args.push(absolute.to_string_lossy().into_owned());
-    }
+    let mut args = php_server_args(root, cfg.router_file.as_deref(), addr)?;
 
     let log_dir = app.path().app_log_dir().map_err(|e| e.to_string())?;
     fs::create_dir_all(&log_dir).map_err(|e| format!("Log-Verzeichnis: {e}"))?;
@@ -303,6 +334,27 @@ pub fn read_server_log(
     Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
+
+#[tauri::command]
+pub fn clear_server_log(
+    app: AppHandle,
+    state: State<'_, ServerManager>,
+    project_id: String,
+    server_id: String,
+) -> Result<(), String> {
+    let cfg = resolve_server(app.clone(), &project_id, &server_id)?;
+    if cfg.runtime != "php" { return Err("Statische Server haben kein PHP-Prozesslog.".into()); }
+    let log_dir = app.path().app_log_dir().map_err(|e| e.to_string())?;
+    let log_path = log_dir.join(format!("server-{}-{}.log", cfg.id, cfg.port));
+    let lock = state.0.lock().map_err(|_| "Interner Serverzustand beschädigt.")?;
+    // On Windows a running PHP child may hold handles to this file.
+    // Truncate in place rather than trying to delete/rename the active log.
+    let _active = lock.get(&identifier(&project_id, &server_id));
+    OpenOptions::new().write(true).truncate(true).open(log_path)
+        .map_err(|e| format!("Log konnte nicht geleert werden: {e}"))?;
+    Ok(())
+}
+
 impl ServerManager {
     pub fn stop_all(&self) {
         if let Ok(mut lock) = self.0.lock() {
@@ -364,4 +416,69 @@ mod tests {
         let address = first.local_addr().unwrap();
         assert!(TcpListener::bind(address).is_err());
     }
+    #[test]
+    fn php_router_argument_is_relative_and_validated() {
+        let directory = std::env::temp_dir().join(format!("loopsite-router-test-{}", std::process::id()));
+        std::fs::create_dir_all(directory.join("src")).unwrap();
+        std::fs::write(directory.join("src").join("router.php"), "<?php return false;").unwrap();
+        std::fs::write(directory.join("readme.txt"), "not PHP").unwrap();
+        let root = directory.canonicalize().unwrap();
+        let addr = port_address(8000, false);
+        let args = php_server_args(&root, Some("src/router.php"), addr).unwrap();
+        assert_eq!(args[0], "-S");
+        assert_eq!(args[2], "-t");
+        assert_eq!(args[4], php_argument_path(Path::new("src/router.php")));
+        assert!(!args[4].starts_with(r"\\?\"));
+        assert!(php_server_args(&root, Some("readme.txt"), addr).is_err());
+        assert!(php_server_args(&root, Some("not-found.php"), addr).is_err());
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn verbatim_windows_paths_are_normalized_for_php() {
+        assert_eq!(php_argument_path(Path::new(r"\\?\C:\Users\Test\index.php")),
+                   r"C:\Users\Test\index.php");
+        assert_eq!(php_argument_path(Path::new(r"\\?\UNC\server\share\site")),
+                   r"\\server\share\site");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_php_router_smoke_test() {
+        // CI sets this to a real PHP executable; local runs without it skip the
+        // integration test instead of assuming PHP is installed.
+        let Some(php) = std::env::var_os("LOOPSITE_TEST_PHP") else { return };
+        let directory = std::env::temp_dir().join(format!("loopsite-win-php-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(directory.join("router.php"), "<?php echo 'LOOPSITE_ROUTER_OK';").unwrap();
+        let root = directory.canonicalize().unwrap();
+        let reserved = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = reserved.local_addr().unwrap();
+        drop(reserved);
+        let args = php_server_args(&root, Some("router.php"), addr).unwrap();
+        let mut child = Command::new(php).args(args)
+            .current_dir(&root).stdin(Stdio::null())
+            .stdout(Stdio::null()).stderr(Stdio::null())
+            .spawn().expect("PHP should be available on the Windows CI runner");
+        let mut response = String::new();
+        for _ in 0..60 {
+            if let Ok(Some(status)) = child.try_wait() {
+                panic!("PHP server terminated unexpectedly: {status}");
+            }
+            if let Ok(mut stream) = TcpStream::connect_timeout(&addr, Duration::from_millis(100)) {
+                stream.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+                stream.write_all(b"GET /example HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n").unwrap();
+                let _ = stream.read_to_string(&mut response);
+                if response.contains("LOOPSITE_ROUTER_OK") { break; }
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
+        let _ = child.kill();
+        let _ = child.wait();
+        std::fs::remove_dir_all(directory).unwrap();
+        assert!(response.starts_with("HTTP/1.1 200"), "PHP returned unexpected response: {response}");
+        assert!(response.contains("LOOPSITE_ROUTER_OK"), "PHP router was not executed correctly: {response}");
+    }
+
 }

@@ -28,7 +28,17 @@ jobs:
         run: python scripts/verify-icons.py
       - run: npm install
       - run: npm run build
-      - run: cd src-tauri && cargo test
+      - name: Set up PHP 8.4 for Windows router smoke test
+        if: runner.os == 'Windows'
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          coverage: none
+          tools: none
+      - name: Rust tests and PHP router smoke test
+        env:
+          LOOPSITE_TEST_PHP: php
+        run: cd src-tauri && cargo test
       - name: Start isolated MariaDB test container
         if: runner.os == 'Linux'
         run: |

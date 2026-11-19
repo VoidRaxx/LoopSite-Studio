@@ -27,9 +27,9 @@ Early development. **No stable production release yet.** Desktop build artifacts
 ### Implemented (experimental)
 
 - Desktop project management with separate server and domain configurations
-- PHP and static-site start/stop, status, process logs, loopback by default, optional LAN binding
+- PHP and static-site start/stop, status, color-coded searchable live logs (copy/clear), loopback by default, optional LAN binding
 - Local HTTP domain routing through an externally installed Caddy executable
-- Offline Monaco file editor: browsing, tabs, syntax highlighting, search, replace and guarded saves
+- Offline Monaco file editor: browsing, multiple tabs, side-by-side code panes, resizable file tree, syntax highlighting, search, replace and guarded saves
 - HybrideUniverse / Dark / White themes
 - Native SQLite database manager: create project databases and tables, preview/insert rows, and import/export consistent `.sqlite3` files
 - Opt-in runtime setup for PHP and Caddy using OS package managers (experimental)
