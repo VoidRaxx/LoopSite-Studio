@@ -49,7 +49,7 @@ The release build uses the public key for verification and the private key for s
 3. Obtain explicit maintainer approval of this exact version and English changelog.
 4. Make sure that the normal **Desktop build checks** and **Arch Linux package validation** workflows pass on `main`. These checks do *not* publish downloadable installers.
 5. Open **GitHub → Actions → Approved official release → Run workflow**. Select branch `main`, enter the approved version tag, and enter `APPROVE LOOPSITE RELEASE` in the approval field.
-6. The workflow verifies that the version/changelog are on the approved commit, creates the matching Git tag automatically if it does not yet exist, and builds both Windows variants, DEB/RPM, portable AppImage, and the Arch package. Signed NSIS/AppImage assets are generated and checked.
+6. The workflow verifies that the version/changelog are on the approved commit, builds both Windows variants, DEB/RPM, portable AppImage, and the Arch package and verifies signed NSIS/AppImage assets. Only after all package checks pass does it create the matching Git tag and publish the release.
 7. If any job fails, **nothing is publicly released**. If all jobs succeed, the release is published as a stable GitHub release or an experimental prerelease with the approved changelog.
 
 To add an extra approval step, configure the GitHub Actions `release-approval` environment with required reviewers. Without environment protection, **the explicit manual dispatch and approval input are the only human safeguards**.

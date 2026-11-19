@@ -11,17 +11,15 @@ if (!providedKey || !privateKey) {
 }
 // The Tauri CLI uses the minisign public-key format. Accept a complete text
 // key or its base64-encoded representation; always embed the decoded text.
-const pubkey = (providedKey.startsWith("untrusted comment:")
-  ? providedKey
-  : Buffer.from(providedKey, "base64").toString("utf8")
-).replace(/\r\n/g, "\n").trim();
-const keyLines = pubkey.split("\n");
-const encodedKey = keyLines[1] ?? "";
-if (keyLines.length !== 2 ||
-    !keyLines[0].startsWith("untrusted comment:") ||
-    !/^RW[A-Za-z0-9+/=]{54}$/.test(encodedKey) ||
-    Buffer.from(encodedKey, "base64").length !== 42) {
-  console.error("LOOPSITE_UPDATER_PUBLIC_KEY is not a complete valid-format minisign public key.");
+// GitHub may store the entire .pub text (comment line + key) or just the
+// base64 line. Tauri's updater plugin expects ONLY the base64 line.
+const normalized = providedKey.replace(/\r\n/g, "\n").trim();
+const lines = normalized.split("\n").map(line => line.trim()).filter(Boolean);
+const pubkey = lines.length === 2 && lines[0].startsWith("untrusted comment:")
+  ? lines[1] : lines.length === 1 ? lines[0] : "";
+if (!/^RW[A-Za-z0-9+/]{54}$/.test(pubkey) ||
+    Buffer.from(pubkey, "base64").length !== 42) {
+  console.error("LOOPSITE_UPDATER_PUBLIC_KEY must be the public key base64 line or the complete minisign .pub file.");
   process.exit(1);
 }
 const path = "src-tauri/tauri.conf.json";

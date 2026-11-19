@@ -21,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.sha }}
       - name: Verify approval, version and English changelog
         id: validate
         env:
@@ -29,6 +29,8 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/main" || { echo "Start the release from main."; exit 1; }
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || { echo "Release checkout differs from the reviewed commit."; exit 1; }
           test "$REVIEW_APPROVAL" = "APPROVE LOOPSITE RELEASE" || { echo "Explicit approval required"; exit 1; }
           [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-experimental\.[0-9]+)?$ ]] || exit 1
           test "v$(node -p "require('./src-tauri/tauri.conf.json').version")" = "$RELEASE_TAG"
@@ -42,38 +44,6 @@ jobs:
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
           else
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
-          fi
-      - name: Create the exact approved release tag
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.tag }}
-        run: |
-          set -euo pipefail
-          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
-            echo "Official releases must be started from the main branch."
-            exit 1
-          fi
-          target="$(git rev-parse HEAD)"
-          if [[ "$target" != "$GITHUB_SHA" ]]; then
-            echo "Main advanced after approval. Review the current changelog and rerun."
-            exit 1
-          fi
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            echo "This release has already been published or drafted; refusing to replace it."
-            exit 1
-          fi
-          existing="$(git ls-remote --tags origin "refs/tags/$RELEASE_TAG" | awk '{print $1}')"
-          if [[ -n "$existing" ]]; then
-            if [[ "$existing" != "$target" ]]; then
-              echo "Existing tag points to a different revision; refusing to change it."
-              exit 1
-            fi
-            echo "Approved tag already exists at the correct revision."
-          else
-            gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" \
-              -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$target" >/dev/null
-            echo "Approved tag created from main."
           fi
 
   build:
@@ -90,7 +60,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag }}
+          ref: ${{ github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -180,7 +150,7 @@ jobs:
         run: pacman -Sy --noconfirm --needed git
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag }}
+          ref: ${{ github.sha }}
       - name: Install Arch compilation dependencies
         run: |
           pacman -Syu --noconfirm --needed base-devel rust cargo nodejs npm webkit2gtk-4.1 gtk3 libayatana-appindicator librsvg openssl pkgconf
@@ -218,7 +188,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag }}
+          ref: ${{ github.sha }}
       - uses: actions/download-artifact@v4
         with:
           pattern: reviewed-*
@@ -238,6 +208,38 @@ jobs:
           test "$(find approved-files -name '*Linux-Portable.zip' | wc -l)" -eq 1
           cp "release-notes/$RELEASE_TAG.md" release-notes.md
           node scripts/create-update-manifest.mjs approved-files "$RELEASE_TAG" release-notes.md
+      - name: Create the exact approved release tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="$(git rev-parse HEAD)"
+          test "$target" = "$GITHUB_SHA" || { echo "Publish checkout differs from reviewed commit."; exit 1; }
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release already exists. Refusing to overwrite or re-sign it."
+            exit 1
+          fi
+          existing="$(git ls-remote --tags origin "refs/tags/$RELEASE_TAG" | awk '{print $1}')"
+          if [[ "$existing" == "$target" ]]; then
+            echo "Approved tag already points to the reviewed commit."
+          elif [[ -z "$existing" ]]; then
+            gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$target" >/dev/null
+            echo "Created the exact approved tag after all builds passed."
+          elif [[ "$RELEASE_TAG" == "v0.2.0-experimental.1" &&
+                  "$existing" == "22e18a1bf766e5b21bf810a3ba7e1cc36707ef88" ]]; then
+            # The first attempt made this tag, then failed before releasing any
+            # assets because the updater public-key format was incorrect.
+            # Recover only this exact known, unpublished failed tag.
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$RELEASE_TAG" \
+              -f "sha=$target" -F force=true >/dev/null
+            echo "Recovered the unpublished tag from the failed first release."
+          else
+            echo "An existing tag points to a different commit; refusing to retag."
+            exit 1
+          fi
       - name: Publish approved official stable release or experimental prerelease
         env:
           GH_TOKEN: ${{ github.token }}

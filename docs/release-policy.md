@@ -42,7 +42,7 @@ Localization of the entire existing UI is an incremental project. Do not label t
 3. Add `release-notes/vX.Y.Z[-experimental.N].md` in **English** using the template below.
 4. Review the complete changelog with the owner and obtain explicit approval.
 5. In **GitHub → Actions → Approved official release → Run workflow**, select **main**, enter the approved version tag (for example `v0.2.0-experimental.1`) and type the exact approval phrase `APPROVE LOOPSITE RELEASE`.
-6. The workflow verifies the version and changelog on the approved main commit, **creates the corresponding Git tag automatically**, then builds, checks, signs, and publishes only after every platform succeeds. Ordinary commits and tag pushes do not trigger publication.
+6. The workflow verifies the version and changelog on the approved main commit, builds, checks, and signs all platforms first; only after success does it **create the corresponding Git tag and publish the release**. Ordinary commits and tag pushes do not trigger publication.
 7. For an additional mandatory human gate, configure the GitHub Actions `release-approval` environment with **Required reviewers**. Without configuring that environment protection in GitHub, manual workflow dispatch and its confirmation are the only gates.
 8. The workflow builds and checks Windows, Ubuntu/Fedora-compatible packages and Arch. If any requested format fails, nothing is published.
 9. Signed releases additionally require secure GitHub secrets for the Tauri updater. Do not publish unsigned installers claiming signed auto-update support.
