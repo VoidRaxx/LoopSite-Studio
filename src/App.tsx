@@ -336,7 +336,7 @@ export default function App() {
                 return <article className="item-card" key={d.id}><div><strong>{d.hostname}</strong><p>HTTP → {server?.name ?? "Unbekannter Server"} :{server?.port}{d.https ? " · HTTPS geplant" : ""}</p></div>
                   <button className="icon-button" title="Domain entfernen" onClick={() => void deleteDomain(d)} disabled={busy}>×</button></article>;
               })}
-              <div className="hint">PHP- und statische Server können lokal gestartet und gestoppt werden. Domain-Routing, Runtime-Downloads und Datenbanken folgen in späteren Entwicklungsschritten.</div>
+              <div className="hint">PHP- und statische Server können gestartet und gestoppt werden. Das lokale HTTP-Domain-Routing findest du unter Routing. Runtime-Downloads und Datenbanken folgen später.</div>
             </>}
           </div>
         </div>
@@ -355,7 +355,7 @@ export default function App() {
           <label>Document Root<div className="field-row"><input value={serverRoot} onChange={e => setServerRoot(e.target.value)} required/><button type="button" className="secondary" onClick={() => void chooseDir(setServerRoot)}>Wählen</button></div></label>
           <div className="field-row"><label className="grow">Runtime<select value={serverRuntime} onChange={e => setServerRuntime(e.target.value as Runtime)}><option value="php">PHP</option><option value="static">Statisch (HTML/CSS/JS)</option><option value="custom">Benutzerdefiniert (geplant)</option></select></label><label className="port-field">Port<input type="number" min="1" max="65535" value={serverPort} onChange={e => setServerPort(e.target.value)} required/></label></div>
           <label>PHP-Router (optional)<input value={serverRouter} onChange={e => setServerRouter(e.target.value)} placeholder="router.php" /></label>
-          <label className="checkbox-label"><input type="checkbox" checked={serverLan} onChange={e => setServerLan(e.target.checked)}/> LAN-Zugriff später erlauben (standardmäßig aus)</label>
+          <label className="checkbox-label"><input type="checkbox" checked={serverLan} onChange={e => setServerLan(e.target.checked)}/> LAN-Zugriff aktivieren (nur für vertrauenswürdige lokale Netzwerke)</label>
         </>}
         {dialog === "domain" && <>
           <label>Hostname<input autoFocus value={domainHost} onChange={e => setDomainHost(e.target.value)} placeholder="api.meinprojekt.localhost" required/></label>

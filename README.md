@@ -20,7 +20,24 @@ Your feedback and contributions are greatly appreciated!
 
 ## Status
 
-Early development. **Not yet a downloadable or production-ready application.** The project model and architecture are being implemented before server/runtime management.
+Early development. **No stable production release yet.** Desktop build artifacts from GitHub Actions are experimental and not yet validated through cross-platform end-to-end testing.
+
+### Implemented (experimental)
+
+- Desktop project management with separate server and domain configurations
+- PHP and static-site start/stop, status, process logs, loopback by default, optional LAN binding
+- Local HTTP domain routing through an externally installed Caddy executable
+- Offline Monaco file editor: browsing, tabs, syntax highlighting, search, replace and guarded saves
+- HybrideUniverse / Dark / White themes
+
+### Not implemented yet
+
+- Managed PHP/Caddy runtime installation and version switching
+- MariaDB/SQLite instance management, phpMyAdmin integration
+- Automatic local HTTPS certificate and arbitrary hostname resolution setup
+- Reliable packaged releases verified by installer and runtime smoke tests
+
+For details, see `docs/editor.md`, `docs/local-routing.md` and `docs/architecture.md`.
 
 ## Key concept
 
@@ -67,4 +84,4 @@ Test Website (Project)
 
 Local-only by default; no implicit router port forwarding or Internet exposure. Runtime downloads must be verified. Never automatically upgrade a running project's PHP or database major version.
 
-MIT license is planned; licensing will be added as a separate tracked file.
+Licensed under the MIT license (see LICENSE).

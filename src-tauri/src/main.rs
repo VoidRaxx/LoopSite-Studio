@@ -4,6 +4,7 @@ mod projects;
 mod servers;
 mod proxy;
 mod editor;
+mod executables;
 
 fn main() {
     let manager = servers::ServerManager::default();

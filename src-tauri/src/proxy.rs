@@ -127,7 +127,8 @@ pub fn start_proxy(
 
     // Explicit argv: do not pass user-defined hostnames through a command shell.
     // caddy must be installed separately until runtime provisioning is available.
-    let output = Command::new("caddy")
+    let caddy_path = crate::executables::resolve("caddy")?;
+    let output = Command::new(&caddy_path)
         .arg("validate").arg("--config").arg(&config_path).arg("--adapter").arg("caddyfile")
         .output()
         .map_err(|err| format!("Caddy fehlt oder konnte nicht gestartet werden: {err}. Installiere Caddy und füge es deinem PATH hinzu."))?;
@@ -139,7 +140,7 @@ pub fn start_proxy(
         .open(&log_path).map_err(|e| e.to_string())?;
     let stderr = stdout.try_clone().map_err(|e| e.to_string())?;
     drop(port_lock);
-    let mut command = Command::new("caddy");
+    let mut command = Command::new(&caddy_path);
     command.arg("run").arg("--config").arg(&config_path).arg("--adapter").arg("caddyfile")
         .current_dir(&config_dir)
         .stdin(Stdio::null())

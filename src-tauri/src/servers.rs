@@ -85,7 +85,7 @@ fn run_php(
         .map_err(|e| format!("Log-Datei: {e}"))?;
     let stderr = stdout.try_clone().map_err(|e| e.to_string())?;
 
-    let mut command = Command::new("php");
+    let mut command = Command::new(crate::executables::resolve("php")?);
     command.args(args).current_dir(root)
         .stdin(Stdio::null())
         .stdout(Stdio::from(stdout))
@@ -266,7 +266,11 @@ pub fn stop_server(
 pub fn list_running_servers(state: State<'_, ServerManager>) -> Result<Vec<RunningServer>, String> {
     let mut lock = state.0.lock().map_err(|_| "Interner Serverzustand beschädigt.")?;
     lock.retain(|_, entry| match &mut entry.worker {
-        Worker::Php(child) => matches!(child.try_wait(), Ok(None)),
+        Worker::Php(child) => match child.try_wait() {
+            Ok(None) => true,
+            Ok(Some(_)) => { let _ = child.wait(); false },
+            Err(_) => false,
+        },
         Worker::Static { thread, .. } => !thread.is_finished(),
     });
     Ok(lock.values().map(|entry| entry.details.clone()).collect())
