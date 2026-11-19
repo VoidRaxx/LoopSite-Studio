@@ -1,0 +1,58 @@
+name: Feature request
+description: Suggest a new feature or usability improvement.
+title: "[Feature]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        LoopSite Studio is an early alpha. Feature proposals are reviewed against scope, portability, security, and maintainability.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What workflow is difficult or impossible today?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: Explain the expected behavior and user experience.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What existing features or tools did you evaluate?
+    validations:
+      required: false
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Primary area
+      options:
+        - Projects and servers
+        - Editor
+        - Databases
+        - PHP and runtimes
+        - Routing / networking
+        - User interface and themes
+        - Installation / portable / updates
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Compatibility and risks
+      description: Mention Windows/Linux differences, data migration, privileges, or breaking changes.
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and the roadmap for similar requests.
+          required: true

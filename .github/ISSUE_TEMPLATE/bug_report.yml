@@ -1,0 +1,82 @@
+name: Bug report
+description: Report incorrect behavior, crashes, or broken functionality.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting an issue with LoopSite Studio. Before submitting, check existing issues.
+
+        **Security vulnerability?** Do not post it here. Follow [SECURITY.md](https://github.com/VoidRaxx/LoopSite-Studio/blob/main/SECURITY.md).
+        Remove tokens, credentials, private project paths, and sensitive database content from logs and screenshots.
+  - type: input
+    id: version
+    attributes:
+      label: LoopSite Studio version
+      description: Find the version at the bottom of the sidebar.
+      placeholder: "0.1.0-experimental.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - Arch / CachyOS / Garuda
+        - Debian / Ubuntu
+        - Fedora / openSUSE
+        - Other Linux
+    validations:
+      required: true
+  - type: dropdown
+    id: distribution
+    attributes:
+      label: Installation type
+      options:
+        - Installer / system package
+        - Portable
+        - Built from source
+        - Other / unknown
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Provide exact steps using a test project when possible.
+      placeholder: |
+        1. Open ...
+        2. Click ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include error messages and sanitized logs if relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Additional context
+      description: Relevant screenshots, runtime versions, or non-sensitive configuration details.
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues for duplicates.
+          required: true
+        - label: I removed private or sensitive information from this report.
+          required: true

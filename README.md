@@ -14,7 +14,7 @@ In the future, I plan to gradually review, refactor, and improve the codebase to
 
 **Found a bug or an issue?**
 
-If you encounter any bugs, unexpected behavior, security vulnerabilities, or have suggestions for improvements, please feel free to open an issue or submit a pull request.
+For bugs and feature suggestions, please [open an issue](https://github.com/VoidRaxx/LoopSite-Studio/issues/new/choose) or submit a pull request. **Do not report security vulnerabilities in public issues; follow the [Security Policy](SECURITY.md) instead.**
 
 Your feedback and contributions are greatly appreciated!
 
@@ -90,6 +90,14 @@ Test Website (Project)
 Local-only by default; no implicit router port forwarding or Internet exposure. Runtime downloads must be verified. Never automatically upgrade a running project's PHP or database major version.
 
 Licensed under the MIT license (see LICENSE).
+
+## Contributing and community
+
+- [How to contribute](CONTRIBUTING.md)
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Security Policy](SECURITY.md)
+- [Bug reports and feature requests](https://github.com/VoidRaxx/LoopSite-Studio/issues/new/choose)
+- [Pull requests](https://github.com/VoidRaxx/LoopSite-Studio/pulls)
 
 ## Distributions and Releases
 
