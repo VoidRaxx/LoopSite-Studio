@@ -68,29 +68,45 @@ jobs:
           LOOPSITE_CI_MARIA_PORT: '3307'
           LOOPSITE_CI_MARIA_PASSWORD: LoopSiteCiTestOnly123
         run: cd src-tauri && cargo test real_mariadb_integration_when_configured
-      - name: Build native installers
+      # CI validates every format but does NOT publish downloadable installers.
+      # Only a manually approved release workflow may upload distributable files.
+      - name: Build Windows NSIS installer
+        if: runner.os == 'Windows'
         env:
           CARGO_BUILD_JOBS: '2'
           CARGO_INCREMENTAL: '0'
-        run: npm run tauri build
-      - name: Upload experimental Windows installer
-        if: runner.os == 'Windows' && success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: loopsite-windows-experimental
-          path: |
-            src-tauri/target/release/bundle/nsis/*.exe
-            src-tauri/target/release/bundle/msi/*.msi
-          if-no-files-found: warn
-          retention-days: 14
-      - name: Upload experimental Linux packages
-        if: runner.os == 'Linux' && success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: loopsite-linux-experimental
-          path: |
-            src-tauri/target/release/bundle/appimage/*.AppImage
-            src-tauri/target/release/bundle/deb/*.deb
-            src-tauri/target/release/bundle/rpm/*.rpm
-          if-no-files-found: warn
-          retention-days: 14
+        run: npx tauri build --bundles nsis
+      - name: Build Windows fully portable executable
+        if: runner.os == 'Windows'
+        env:
+          LOOPSITE_PORTABLE: '1'
+          CARGO_BUILD_JOBS: '2'
+        run: npx tauri build --no-bundle --config src-tauri/tauri.portable.conf.json
+      - name: Validate Windows installer and portable executable
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Get-ChildItem 'src-tauri/target/release/bundle/nsis/*-setup.exe')) { throw 'Missing NSIS installer' }
+          if (-not (Test-Path 'src-tauri/target/release/loopsite-studio.exe')) { throw 'Missing portable exe' }
+          Write-Host 'NSIS installer and portable executable built successfully; no downloadable artifacts published.'
+      - name: Build Linux DEB and RPM installers
+        if: runner.os == 'Linux'
+        env:
+          CARGO_BUILD_JOBS: '2'
+          CARGO_INCREMENTAL: '0'
+        run: npx tauri build --bundles deb,rpm
+      - name: Build Linux Portable AppImage
+        if: runner.os == 'Linux'
+        env:
+          LOOPSITE_PORTABLE: '1'
+          CARGO_BUILD_JOBS: '2'
+        run: npx tauri build --bundles appimage --config src-tauri/tauri.portable.conf.json
+      - name: Validate Linux packages and portable AppImage
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find src-tauri/target/release/bundle/deb -name '*.deb' | wc -l)" -gt 0
+          test "$(find src-tauri/target/release/bundle/rpm -name '*.rpm' | wc -l)" -gt 0
+          test "$(find src-tauri/target/release/bundle/appimage -name '*.AppImage' | wc -l)" -gt 0
+          echo "DEB, RPM and portable AppImage passed packaging; no downloadable artifacts published."
