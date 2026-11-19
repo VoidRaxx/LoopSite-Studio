@@ -8,6 +8,7 @@ import DatabasePanel from "./DatabasePanel";
 import MariaPanel from "./MariaPanel";
 import LogViewer, { type LogTarget } from "./LogViewer";
 import RuntimeInstallPanel from "./RuntimeInstallPanel";
+import UpdateManager from "./UpdateManager";
 import { THEME_OPTIONS, resolveTheme } from "./themes";
 
 type Panel = "projects" | "routing" | "editor" | "php" | "databases" | "setup" | "settings";
@@ -38,6 +39,8 @@ export default function App() {
   const [serverPhpPath, setServerPhpPath] = useState("");
   const [editorDirty, setEditorDirty] = useState(false);
   const [dbEngine, setDbEngine] = useState<"sqlite" | "maria">("sqlite");
+  const [updateCheckSignal, setUpdateCheckSignal] = useState(0);
+  const [updateStatus, setUpdateStatus] = useState("Noch nicht geprüft.");
   const [proxy, setProxy] = useState<ProxyStatus>({ running: false, port: null, hostnameCount: 0 });
   const [proxyPort, setProxyPort] = useState("8080");
   const [proxyBusy, setProxyBusy] = useState(false);
@@ -416,6 +419,19 @@ export default function App() {
             </button>)}
           </div>
           <div className="ui-size-settings">
+            <h3>Updates</h3>
+            <p>Beim Programmstart wird automatisch nach veröffentlichten Updates gesucht. Vor einer
+              Installation werden die Changenotes angezeigt. Du entscheidest zwischen
+              Update, Later und Skip Update.</p>
+            <div className="update-settings">
+              <span role="status">{updateStatus}</span>
+              <button className="secondary" type="button"
+                onClick={() => setUpdateCheckSignal(value => value + 1)}>
+                Jetzt nach Updates suchen
+              </button>
+            </div>
+          </div>
+          <div className="ui-size-settings">
             <h3>UI-Größe</h3>
             <p>Skaliert sämtliche Bedienelemente und Texte. Die Einstellung wird gespeichert.</p>
             <div className="ui-size-options" role="group" aria-label="Größe der Benutzeroberfläche">
@@ -505,6 +521,8 @@ export default function App() {
         </div>
       </section>}
     </main>
+    <UpdateManager checkSignal={updateCheckSignal} onStatus={setUpdateStatus}
+      editorDirty={editorDirty} runningServers={running.length}/>
     {logTarget && <LogViewer target={logTarget} onClose={() => setLogTarget(null)} />}
     {dialog && <div className="overlay" onMouseDown={event => { if (event.target === event.currentTarget && !busy) setDialog(null); }}>
       <form className="modal" onSubmit={event => { event.preventDefault(); void (dialog === "project" ? createProject() : dialog === "server" ? createServer() : createDomain()); }}>

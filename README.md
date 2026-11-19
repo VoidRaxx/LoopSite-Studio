@@ -94,3 +94,5 @@ Licensed under the MIT license (see LICENSE).
 - Database deletion/archival, table creation and guarded row/cell editing; three UI sizes and six themes (experimental). See `docs/database-ui-and-themes.md`.
 
 - Shared theme system with 12 OS-aware and custom palettes; consistent colors across all panels. See `docs/themes-and-appearance.md`.
+
+- Automatic launch-time update checks with changenotes, security/feature categories, Update/Later/Skip options and signed Tauri release support. See [Update setup](docs/updates.md).

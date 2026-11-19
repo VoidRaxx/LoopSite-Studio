@@ -11,6 +11,16 @@ mod maria;
 mod maria_service;
 mod install;
 
+fn signed_updater_ready() -> bool {
+    // Never enable the installer in unsigned development/experimental builds.
+    option_env!("LOOPSITE_SIGNED_UPDATES") == Some("1")
+}
+
+#[tauri::command]
+fn update_install_ready() -> bool {
+    signed_updater_ready()
+}
+
 fn main() {
     let manager = servers::ServerManager::default();
     tauri::Builder::default()
@@ -21,7 +31,17 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_process::init())
+        .setup(|app| {
+            if signed_updater_ready() {
+                // Release builds embed a trusted public signing key and a HTTPS
+                // update endpoint. Experimental installers never register this.
+                app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
+            update_install_ready,
             projects::load_projects,
             projects::save_projects,
             servers::start_server,

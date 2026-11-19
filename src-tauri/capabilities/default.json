@@ -10,6 +10,8 @@
     "dialog:allow-open",
     "opener:allow-open-url",
     "dialog:allow-save",
-    "clipboard-manager:allow-write-text"
+    "clipboard-manager:allow-write-text",
+    "process:allow-restart",
+    "updater:default"
   ]
 }

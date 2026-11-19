@@ -1,0 +1,80 @@
+/* Release updates use the same LoopSite theme tokens and UI scale. */
+.update-modal {
+  width: min(720px, 96vw);
+  max-height: min(88vh, 820px);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 23px;
+}
+.update-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.update-header h2 { font-size: 21px; overflow-wrap: anywhere; }
+.update-versions { color: var(--muted); font-size: 12px; margin: 0; }
+.update-kind {
+  flex-shrink: 0; padding: 7px 10px;
+  font-size: 11px; font-weight: 600;
+  background: var(--accent-bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.update-kind.security {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, var(--panel));
+}
+.update-notes {
+  min-height: 160px;
+  max-height: min(47vh, 430px);
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: var(--bg);
+}
+.update-notes h3 {
+  font-size: 13px;
+  padding: 11px 15px;
+  margin: 0;
+  color: var(--text);
+  background: var(--sidebar);
+  border-bottom: 1px solid var(--line);
+}
+.update-notes pre {
+  color: var(--text);
+  margin: 0;
+  padding: 16px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.65;
+}
+.update-security-hint, .update-warning, .update-error {
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 0;
+  border: 1px solid var(--line);
+}
+.update-security-hint { color: var(--danger); border-color: var(--danger); }
+.update-warning { color: var(--muted); background: var(--glass); }
+.update-error { color: var(--danger); }
+.update-actions { margin-top: 3px; padding-top: 16px; }
+.update-settings { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.update-settings span { font-size: 12px; color: var(--muted); }
+.update-progress { display: grid; gap: 8px; font-size: 12px; }
+.update-progress progress { width: 100%; height: 9px; accent-color: var(--accent); }
+@media(max-width: 620px) {
+  .update-modal { padding: 14px; gap: 10px; }
+  .update-header { flex-direction: column; }
+  .update-actions { flex-wrap: wrap; }
+}
