@@ -8,6 +8,7 @@ import DatabasePanel from "./DatabasePanel";
 import MariaPanel from "./MariaPanel";
 import LogViewer, { type LogTarget } from "./LogViewer";
 import RuntimeInstallPanel from "./RuntimeInstallPanel";
+import { THEME_OPTIONS, resolveTheme } from "./themes";
 
 type Panel = "projects" | "routing" | "editor" | "php" | "databases" | "setup" | "settings";
 type PhpRuntime = { path: string; version: string; source: string };
@@ -50,14 +51,14 @@ export default function App() {
   const [theme, setTheme] = useState<Theme>(() => {
     const saved = localStorage.getItem("loopsite-theme");
     if (saved === "hu") return "default";
-    return (["system","default","universe-dark","universe-light","dark","white"] as string[]).includes(saved ?? "") ? saved as Theme : "default";
+    return saved === "system" || THEME_OPTIONS.some(item => item.id === saved) ? saved as Theme : "default";
   });
   const [uiSize, setUiSize] = useState<"compact" | "normal" | "large">(() => {
     const saved = localStorage.getItem("loopsite-ui-size");
     return saved === "compact" || saved === "large" ? saved : "normal";
   });
   const [systemDark, setSystemDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
-  const activeTheme = theme === "system" ? (systemDark ? "dark" : "white") : theme;
+  const activeTheme = resolveTheme(theme, systemDark);
   const [projectName, setProjectName] = useState("");
   const [projectRoot, setProjectRoot] = useState("");
   const [serverName, setServerName] = useState("");
@@ -78,7 +79,23 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    document.documentElement.dataset.theme = activeTheme;
+    const root = document.documentElement;
+    root.dataset.theme = activeTheme.id;
+    root.style.colorScheme = activeTheme.light ? "light" : "dark";
+    const variables: Record<string, string> = {
+      "--bg": activeTheme.palette.bg,
+      "--panel": activeTheme.palette.panel,
+      "--sidebar": activeTheme.palette.sidebar,
+      "--line": activeTheme.palette.line,
+      "--text": activeTheme.palette.text,
+      "--muted": activeTheme.palette.muted,
+      "--accent": activeTheme.palette.accent,
+      "--accent-bg": activeTheme.palette.accentBg,
+      "--glass": activeTheme.palette.glass,
+      "--danger": activeTheme.palette.danger,
+      "--on-accent": activeTheme.palette.onAccent,
+    };
+    for (const [key, value] of Object.entries(variables)) root.style.setProperty(key, value);
     localStorage.setItem("loopsite-theme", theme);
   }, [theme, activeTheme]);
   useEffect(() => {
@@ -365,23 +382,37 @@ export default function App() {
             Bestehende Server mit fest zugewiesener Version bleiben unverändert.
             Unter „Einrichtung“ kannst du fehlendes PHP über den System-Paketmanager installieren.</p>
         </div>
-      </section> : panel === "editor" ? <EditorPanel project={selected} projects={projects} theme={activeTheme}
+      </section> : panel === "editor" ? <EditorPanel project={selected} projects={projects} theme={activeTheme.id}
         onSelectProject={switchEditorProject} onDirtyChange={setEditorDirty}/> : panel === "settings" ? <section>
         <div className="page-heading"><div><p className="eyebrow">ANPASSUNG</p><h1>Einstellungen</h1><p>Darstellung von LoopSite Studio.</p></div></div>
-        <div className="card settings"><h2>Theme</h2><p>System folgt automatisch dem hellen oder dunklen Modus des Betriebssystems. Alle Einstellungen werden lokal gespeichert.</p>
+        <div className="card settings"><div className="theme-settings-header">
+          <div><h2>Farbschema</h2>
+            <p>Einheitliche Farbpalette in allen Bereichen. Systemstandard übernimmt automatisch den Hell-/Dunkelmodus.</p></div>
+          <span className="theme-current">Aktiv: {theme === "system" ? "Systemstandard" : activeTheme.label}</span>
+        </div>
           <div className="theme-grid">
-            {([
-              {id:"system",label:"Systemstandard"},
-              {id:"default",label:"Default"},
-              {id:"universe-dark",label:"Universe Dark"},
-              {id:"universe-light",label:"Universe Light"},
-              {id:"dark",label:"Dark"},
-              {id:"white",label:"White"}
-            ] as {id: Theme;label: string}[]).map(item => <button key={item.id}
+            <button aria-pressed={theme === "system"} className={"theme-select " + (theme === "system" ? "chosen" : "")}
+              onClick={() => setTheme("system")}>
+              <span className="theme-preview theme-preview-system" aria-hidden="true">
+                <i className="theme-preview-bar"/><i className="theme-preview-card"/><i className="theme-preview-accent"/>
+              </span>
+              <strong>Systemstandard</strong><small>Automatisch · Hell/Dunkel</small>
+            </button>
+            {THEME_OPTIONS.map(item => <button key={item.id}
               aria-pressed={theme === item.id} className={"theme-select " + (theme === item.id ? "chosen" : "")}
               onClick={() => setTheme(item.id)}>
-              <span className={"theme-preview preview-" + item.id}></span>
-              <strong>{item.label}</strong>
+              <span className="theme-preview" aria-hidden="true"
+                style={{
+                  background: item.palette.bg,
+                  color: item.palette.text,
+                  borderColor: item.palette.line,
+                  ["--preview-sidebar" as string]: item.palette.sidebar,
+                  ["--preview-panel" as string]: item.palette.panel,
+                  ["--preview-accent" as string]: item.palette.accent,
+                }}>
+                <i className="theme-preview-bar"/><i className="theme-preview-card"/><i className="theme-preview-accent"/>
+              </span>
+              <strong>{item.label}</strong><small>{item.description}</small>
             </button>)}
           </div>
           <div className="ui-size-settings">

@@ -23,7 +23,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev mariadb-client
       - name: Validate desktop icons
         run: python scripts/verify-icons.py
       - run: npm install
@@ -45,8 +45,13 @@ jobs:
           docker run -d --name loopsite-mariadb-ci -p 127.0.0.1:3307:3306 \
             -e MARIADB_ROOT_PASSWORD=LoopSiteCiTestOnly123 \
             -e MARIADB_ROOT_HOST=% mariadb:11.4
-          for attempt in $(seq 1 50); do
-            if docker exec loopsite-mariadb-ci mariadb-admin ping -uroot -pLoopSiteCiTestOnly123 --silent 2>/dev/null; then
+          # Wait for authentication on the actual host-mapped TCP socket,
+          # not merely docker exec ping over the container's Unix socket.
+          for attempt in $(seq 1 60); do
+            if MYSQL_PWD=LoopSiteCiTestOnly123 mariadb --protocol=tcp \
+              --host=127.0.0.1 --port=3307 --user=root \
+              --execute="SELECT 1;" >/dev/null 2>&1; then
+              echo "MariaDB TCP connection is ready"
               exit 0
             fi
             sleep 2

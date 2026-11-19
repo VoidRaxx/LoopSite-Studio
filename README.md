@@ -92,3 +92,5 @@ Local-only by default; no implicit router port forwarding or Internet exposure. 
 Licensed under the MIT license (see LICENSE).
 
 - Database deletion/archival, table creation and guarded row/cell editing; three UI sizes and six themes (experimental). See `docs/database-ui-and-themes.md`.
+
+- Shared theme system with 12 OS-aware and custom palettes; consistent colors across all panels. See `docs/themes-and-appearance.md`.
