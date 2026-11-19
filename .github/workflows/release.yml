@@ -1,26 +1,64 @@
-name: Signed desktop release
+name: Approved official release
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing reviewed tag, for example v0.2.0-experimental.1"
+        required: true
+        type: string
+      approval:
+        description: "Type APPROVE LOOPSITE RELEASE after reviewing the full changelog and package plan."
+        required: true
+        type: string
 permissions:
   contents: write
-
 jobs:
-  signed-build:
+  review:
+    runs-on: ubuntu-latest
+    environment: release-approval
+    outputs:
+      prerelease: ${{ steps.validate.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+      - name: Verify approval, signed tag, version and English changelog
+        id: validate
+        env:
+          REVIEW_APPROVAL: ${{ inputs.approval }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          test "$REVIEW_APPROVAL" = "APPROVE LOOPSITE RELEASE" || { echo "Explicit approval required"; exit 1; }
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-experimental\.[0-9]+)?$ ]] || exit 1
+          test "v$(node -p "require('./src-tauri/tauri.conf.json').version")" = "$RELEASE_TAG"
+          test "v$(node -p "require('./package.json').version")" = "$RELEASE_TAG"
+          test "v$(sed -n 's/^version = "\([^"]*\)"/\1/p' src-tauri/Cargo.toml | head -n1)" = "$RELEASE_TAG"
+          changelog="release-notes/$RELEASE_TAG.md"
+          test -s "$changelog" || { echo "Release requires an approved changelog file"; exit 1; }
+          grep -q '^## Added\|^## Changed\|^## Fixed\|^## Security\|^## Known Issues' "$changelog" || exit 1
+          ! grep -qi 'TODO\|TBD\|PLACEHOLDER' "$changelog" || exit 1
+          if [[ "$RELEASE_TAG" == *-experimental.* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: review
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: windows-latest
-            artifact: signed-windows
-            bundles: nsis
+            flavor: windows
           - os: ubuntu-24.04
-            artifact: signed-linux
-            bundles: appimage
+            flavor: linux
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -29,80 +67,155 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get -o Acquire::Retries=5 update
-          sudo apt-get -o Acquire::Retries=5 install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev
+          sudo apt-get -o Acquire::Retries=5 install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev rpm zip
       - run: npm install
-      - name: Validate tag matches application version
-        shell: bash
-        run: |
-          node -e "const v=require('./src-tauri/tauri.conf.json').version; if('v'+v!==process.env.GITHUB_REF_NAME){console.error('Tag and app version disagree');process.exit(1)}"
-      - name: Configure trusted updater signing
+      - name: Configure signed update verification
         env:
           LOOPSITE_UPDATER_PUBLIC_KEY: ${{ secrets.LOOPSITE_UPDATER_PUBLIC_KEY }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         run: node scripts/configure-signed-updater.mjs
-      - name: Verify frontend
-        run: npm run build
-      - name: Build signed installer
+      - run: npm run build
+      - name: Build signed Windows NSIS installer
+        if: runner.os == 'Windows'
         env:
           LOOPSITE_SIGNED_UPDATES: '1'
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          CARGO_BUILD_JOBS: '2'
-        run: npx tauri build --bundles ${{ matrix.bundles }}
-      - name: Upload signed Windows assets
+        run: npx tauri build --bundles nsis
+      - name: Build self-contained Windows Portable EXE
         if: runner.os == 'Windows'
-        uses: actions/upload-artifact@v4
-        with:
-          name: signed-windows
-          path: |
-            src-tauri/target/release/bundle/nsis/*.exe
-            src-tauri/target/release/bundle/nsis/*.exe.sig
-          if-no-files-found: error
-          retention-days: 7
-      - name: Upload signed Linux assets
+        env:
+          LOOPSITE_PORTABLE: '1'
+        run: npx tauri build --no-bundle --config src-tauri/tauri.portable.conf.json
+      - name: Package Windows assets
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item release-files -ItemType Directory -Force | Out-Null
+          Get-ChildItem 'src-tauri/target/release/bundle/nsis/*.exe*' | Copy-Item -Destination release-files
+          New-Item portable/portable-data -ItemType Directory -Force | Out-Null
+          Copy-Item src-tauri/target/release/loopsite-studio.exe portable/LoopSite-Studio.exe
+          Set-Content -Path portable/README.txt -Value 'Portable: keep portable-data next to LoopSite-Studio.exe. No installation required.'
+          Compress-Archive -Path portable/* -DestinationPath release-files/LoopSite-Studio-Windows-Portable.zip -Force
+          if (-not (Get-ChildItem release-files/*-setup.exe)) { throw 'Missing installer' }
+          if (-not (Get-ChildItem release-files/*.exe.sig)) { throw 'Missing NSIS signing signature' }
+      - name: Build installed Linux DEB, RPM and signed AppImage
         if: runner.os == 'Linux'
-        uses: actions/upload-artifact@v4
+        env:
+          LOOPSITE_SIGNED_UPDATES: '1'
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npx tauri build --bundles deb,rpm,appimage
+      - name: Stage installed Linux packages and signed manifest assets
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p release-files
+          find src-tauri/target/release/bundle/deb -name '*.deb' -exec cp -v {} release-files/ \;
+          find src-tauri/target/release/bundle/rpm -name '*.rpm' -exec cp -v {} release-files/ \;
+          find src-tauri/target/release/bundle/appimage -name '*.AppImage*' -exec cp -v {} release-files/ \;
+      - name: Build separate fully portable Linux AppImage
+        if: runner.os == 'Linux'
+        env:
+          LOOPSITE_PORTABLE: '1'
+        run: npx tauri build --bundles appimage --config src-tauri/tauri.portable.conf.json
+      - name: Package portable Linux distribution
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p portable/portable-data
+          find src-tauri/target/release/bundle/appimage -name '*.AppImage' -exec cp {} portable/LoopSite-Studio-Portable.AppImage \;
+          test -s portable/LoopSite-Studio-Portable.AppImage
+          chmod +x portable/LoopSite-Studio-Portable.AppImage
+          printf '%s\n' 'Portable: keep portable-data beside the AppImage; run chmod +x *.AppImage if required.' > portable/README.txt
+          (cd portable && zip -qr ../release-files/LoopSite-Studio-Linux-Portable.zip .)
+          test "$(find release-files -name '*.deb' | wc -l)" -gt 0
+          test "$(find release-files -name '*.rpm' | wc -l)" -gt 0
+          test "$(find release-files -name '*.AppImage.sig' | wc -l)" -gt 0
+      - uses: actions/upload-artifact@v4
         with:
-          name: signed-linux
-          path: |
-            src-tauri/target/release/bundle/appimage/*.AppImage
-            src-tauri/target/release/bundle/appimage/*.AppImage.sig
+          name: reviewed-${{ matrix.flavor }}
+          path: release-files/*
+          retention-days: 3
           if-no-files-found: error
-          retention-days: 7
 
-  publish:
-    needs: signed-build
+  arch:
+    needs: review
     runs-on: ubuntu-latest
+    container: archlinux:latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+      - name: Install Arch compilation dependencies
+        run: |
+          pacman -Syu --noconfirm --needed base-devel rust cargo nodejs npm webkit2gtk-4.1 gtk3 libayatana-appindicator librsvg openssl pkgconf
+      - run: npm install
+      - name: Build Arch-native executable
+        run: npx tauri build --no-bundle
+      - name: Package for pacman
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp src-tauri/target/release/loopsite-studio packaging/arch/loopsite-studio
+          cp src-tauri/icons/icon.png packaging/arch/loopsite-studio.png
+          version="${{ inputs.tag }}"
+          version="${version#v}"
+          sed -i "s/^pkgver=.*/pkgver=${version//-/_}/" packaging/arch/PKGBUILD
+          useradd -m -s /bin/bash pkgbuild
+          chown -R pkgbuild:pkgbuild packaging/arch
+          su pkgbuild -s /bin/bash -c 'cd "$GITHUB_WORKSPACE/packaging/arch" && makepkg -f --noconfirm --nodeps'
+          mkdir -p release-files
+          find packaging/arch -name '*.pkg.tar.zst' -exec cp {} release-files/ \;
+          test "$(find release-files -name '*.pkg.tar.zst' | wc -l)" -gt 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reviewed-arch
+          path: release-files/*.pkg.tar.zst
+          retention-days: 3
+          if-no-files-found: error
+
+  publish:
+    needs: [review, build, arch]
+    runs-on: ubuntu-latest
+    environment: release-approval
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
       - uses: actions/download-artifact@v4
         with:
-          pattern: signed-*
-          path: release-assets
-      - name: Prepare draft release and manifest
+          pattern: reviewed-*
+          path: approved-files
+      - name: Verify complete packages, signed manifests, and changelog
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          test "$(find approved-files -name '*-setup.exe' | wc -l)" -eq 1
+          test "$(find approved-files -name '*.exe.sig' | wc -l)" -eq 1
+          test "$(find approved-files -name '*Windows-Portable.zip' | wc -l)" -eq 1
+          test "$(find approved-files -name '*.deb' | wc -l)" -gt 0
+          test "$(find approved-files -name '*.rpm' | wc -l)" -gt 0
+          test "$(find approved-files -name '*.pkg.tar.zst' | wc -l)" -gt 0
+          test "$(find approved-files -name '*.AppImage.sig' | wc -l)" -eq 1
+          test "$(find approved-files -name '*Linux-Portable.zip' | wc -l)" -eq 1
+          cp "release-notes/$RELEASE_TAG.md" release-notes.md
+          node scripts/create-update-manifest.mjs approved-files "$RELEASE_TAG" release-notes.md
+      - name: Publish approved official stable release or experimental prerelease
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
         shell: bash
         run: |
           set -euo pipefail
-          tag="$GITHUB_REF_NAME"
-          if gh release view "$tag" >/dev/null 2>&1; then
-            echo "Release already exists. Refusing to replace it."
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release already exists; refusing to overwrite it"
             exit 1
           fi
-          if [ -f "release-notes/$tag.md" ]; then
-            gh release create "$tag" --draft --title "LoopSite Studio $tag" --notes-file "release-notes/$tag.md"
-          else
-            gh release create "$tag" --draft --title "LoopSite Studio $tag" --generate-notes
-          fi
-          gh release view "$tag" --json body --jq '.body' > release-notes.md
-          node scripts/create-update-manifest.mjs release-assets "$tag" release-notes.md
-      - name: Upload all assets and publish
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          mapfile -d '' -t files < <(find release-assets -type f -print0)
-          gh release upload "$GITHUB_REF_NAME" "${files[@]}" latest.json
-          gh release edit "$GITHUB_REF_NAME" --draft=false
+          args=(--title "LoopSite Studio $RELEASE_TAG" --notes-file release-notes.md --draft)
+          if [[ "$RELEASE_TAG" == *-experimental.* ]]; then args+=(--prerelease); fi
+          gh release create "$RELEASE_TAG" "${args[@]}"
+          mapfile -d '' -t files < <(find approved-files -type f -print0)
+          gh release upload "$RELEASE_TAG" "${files[@]}" latest.json
+          gh release edit "$RELEASE_TAG" --draft=false

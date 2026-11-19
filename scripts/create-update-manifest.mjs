@@ -5,7 +5,7 @@ import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, basename } from "node:path";
 
 const [folder, tag, notesFile] = process.argv.slice(2);
-if (!folder || !/^v\d+\.\d+\.\d+$/.test(tag) || !notesFile) {
+if (!folder || !/^v\d+\.\d+\.\d+(?:-experimental\.\d+)?$/.test(tag) || !notesFile) {
   console.error("Usage: node scripts/create-update-manifest.mjs <artifact-dir> <vX.Y.Z> <notes-file>");
   process.exit(1);
 }
@@ -18,7 +18,7 @@ function recursiveFiles(dir) {
 const files = recursiveFiles(folder);
 const matches = pattern => files.filter(file => pattern.test(basename(file)));
 const windows = matches(/\.exe$/i).filter(file => /setup/i.test(basename(file)));
-const linux = matches(/\.AppImage$/i);
+const linux = matches(/\.AppImage$/i).filter(file => !/portable/i.test(basename(file)));
 if (windows.length !== 1 || linux.length !== 1) {
   throw new Error("Expected exactly one Windows NSIS setup EXE and one Linux AppImage, received " +
     windows.length + " / " + linux.length);

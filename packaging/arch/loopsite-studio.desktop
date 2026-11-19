@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=LoopSite Studio
+Comment=Local development environment
+Exec=loopsite-studio
+Icon=loopsite-studio
+Terminal=false
+Categories=Development;IDE;
+StartupNotify=true

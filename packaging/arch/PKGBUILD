@@ -1,0 +1,18 @@
+# Maintainer: LoopSite Studio
+# This package is assembled from the matching Arch CI-built executable.
+pkgname=loopsite-studio
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='LoopSite Studio local development environment'
+arch=('x86_64')
+url='https://github.com/VoidRaxx/LoopSite-Studio'
+license=('MIT')
+depends=('webkit2gtk-4.1' 'gtk3' 'libayatana-appindicator' 'librsvg')
+source=('loopsite-studio' 'loopsite-studio.desktop' 'loopsite-studio.png')
+sha256sums=('SKIP' 'SKIP' 'SKIP')
+
+package(){
+  install -Dm755 "$srcdir/loopsite-studio" "$pkgdir/usr/bin/loopsite-studio"
+  install -Dm644 "$srcdir/loopsite-studio.desktop" "$pkgdir/usr/share/applications/loopsite-studio.desktop"
+  install -Dm644 "$srcdir/loopsite-studio.png" "$pkgdir/usr/share/icons/hicolor/256x256/apps/loopsite-studio.png"
+}

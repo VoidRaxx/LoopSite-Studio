@@ -2,44 +2,51 @@ import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
-import { check } from "@tauri-apps/plugin-updater";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-const RELEASE_API = "https://api.github.com/repos/VoidRaxx/LoopSite-Studio/releases/latest";
-const RELEASE_PAGE = "https://github.com/VoidRaxx/LoopSite-Studio/releases/latest";
+const RELEASE_API = "https://api.github.com/repos/VoidRaxx/LoopSite-Studio/releases?per_page=30";
+const RELEASE_PAGE = "https://github.com/VoidRaxx/LoopSite-Studio/releases";
 const SKIPPED_KEY = "loopsite-updates-skipped-version";
 
 type ReleaseKind = "security" | "feature";
 type Release = {
   version: string;
+  tag: string;
+  experimental: boolean;
   title: string;
   notes: string;
   date: string | null;
   kind: ReleaseKind;
 };
-type Transfer = { received: number; total: number | null };
 
 type Props = {
   checkSignal: number;
   editorDirty: boolean;
   runningServers: number;
   onStatus: (message: string) => void;
+  includeExperimental: boolean;
+  installedExperimental: boolean;
 };
 
-export function parseVersion(version: string): [number, number, number] | null {
-  const result = /^v?(\d+)\.(\d+)\.(\d+)(?:[-+][a-z0-9.-]+)?$/i.exec(version.trim());
+export function parseVersion(version: string): [number,number,number,number | null] | null {
+  const result=/^v?(\d+)\.(\d+)\.(\d+)(?:-experimental\.(\d+))?$/i.exec(version.trim());
   if (!result) return null;
-  const numbers = result.slice(1, 4).map(Number);
-  if (numbers.some(value => !Number.isSafeInteger(value))) return null;
-  return numbers as [number, number, number];
+  const parts=result.slice(1,4).map(Number);
+  const pre=result[4] === undefined ? null : Number(result[4]);
+  if([...parts,...(pre===null?[]:[pre])].some(x=>!Number.isSafeInteger(x)))return null;
+  return [parts[0],parts[1],parts[2],pre];
 }
-
-export function newerVersion(candidate: string, installed: string): boolean {
-  const next = parseVersion(candidate);
-  const current = parseVersion(installed);
-  if (!next || !current) return false;
-  return next.some((value, index) =>
-    value > current[index] && next.slice(0, index).every((prior, i) => prior === current[i]));
+export function compareVersions(left: string,right: string): number {
+  const a=parseVersion(left),b=parseVersion(right);
+  if(!a||!b)return 0;
+  for(let i=0;i<3;i++){const x=a[i] as number;const y=b[i] as number;if(x!==y)return x-y;}
+  if(a[3]===null)return b[3]===null?0:1;
+  if(b[3]===null)return -1;
+  return a[3]-b[3];
+}
+export function newerVersion(candidate:string,installed:string):boolean {
+  if(!parseVersion(candidate)||!parseVersion(installed))return false;
+  return compareVersions(candidate,installed)>0;
 }
 
 function releaseKind(body: string): ReleaseKind {
@@ -50,23 +57,22 @@ function releaseKind(body: string): ReleaseKind {
 
 function releaseNotes(body: string): string {
   const cleaned = body.replace(/<!--\s*loopsite-update:(?:security|feature)\s*-->/gi, "").trim();
-  return cleaned.slice(0, 12000) || "Für dieses Update wurden noch keine Changenotes hinterlegt.";
+  return cleaned.slice(0, 12000) || "No changelog provided for this update.";
 }
 
-export default function UpdateManager({checkSignal, editorDirty, runningServers, onStatus}: Props) {
+export default function UpdateManager({checkSignal, editorDirty, runningServers, onStatus, includeExperimental, installedExperimental}: Props) {
   const [release, setRelease] = useState<Release | null>(null);
   const [installedVersion, setInstalledVersion] = useState("");
   const [signedUpdater, setSignedUpdater] = useState(false);
   const [dialogVisible, setDialogVisible] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [transfer, setTransfer] = useState<Transfer | null>(null);
   const [error, setError] = useState("");
   const pending = useRef(false);
   const checkUpdates = useCallback(async (manual: boolean) => {
     if (pending.current) return;
     pending.current = true;
     setError("");
-    if (manual) onStatus("Updateprüfung läuft …");
+    if (manual) onStatus("Checking for updates…");
     try {
       const currentVersion = await getVersion();
       setInstalledVersion(currentVersion);
@@ -84,50 +90,51 @@ export default function UpdateManager({checkSignal, editorDirty, runningServers,
       } finally {
         window.clearTimeout(timeout);
       }
-      // A new repository may not have published its first release yet.
-      if (response.status === 404) {
+      if (!response.ok) throw new Error("GitHub Releases responded with HTTP " + response.status);
+      const items: unknown = await response.json();
+      if (!Array.isArray(items)) throw new Error("Invalid release list.");
+      const candidates = items.filter((item): item is Record<string,unknown> =>
+        typeof item==="object" && item!==null &&
+        typeof (item as Record<string,unknown>).tag_name==="string" &&
+        (item as Record<string,unknown>).draft!==true
+      ).filter(item => {
+        const tag = item.tag_name as string;
+        const experimental = /-experimental\.\d+$/i.test(tag);
+        return (!experimental || includeExperimental || installedExperimental) &&
+          item.prerelease===experimental &&
+          newerVersion(tag,currentVersion);
+      }).sort((a,b)=>compareVersions(b.tag_name as string,a.tag_name as string));
+      if(candidates.length===0){
         setRelease(null);setDialogVisible(false);
-        onStatus("Noch kein veröffentlichter Release verfügbar.");
+        onStatus("LoopSite Studio is up to date (v" + currentVersion + ").");
         return;
       }
-      if (!response.ok) throw new Error("GitHub-Releases antwortet mit HTTP " + response.status);
-      const data: unknown = await response.json();
-      if (!data || typeof data !== "object") throw new Error("Ungültige Release-Daten.");
-      const item = data as Record<string, unknown>;
-      if (typeof item.tag_name !== "string" ||
-          (typeof item.body !== "string" && item.body !== null) ||
-          item.draft === true || item.prerelease === true) {
-        throw new Error("Ungültiger oder nicht veröffentlichter Release.");
-      }
-      if (!newerVersion(item.tag_name, currentVersion)) {
-        setRelease(null);setDialogVisible(false);
-        onStatus("LoopSite Studio ist aktuell (v" + currentVersion + ").");
-        return;
-      }
-      const version = item.tag_name.replace(/^v/i, "");
-      const body = typeof item.body === "string" ? item.body : "";
-      const found: Release = {
-        version,
-        title: typeof item.name === "string" && item.name.length > 0
-          ? item.name.slice(0, 120) : "LoopSite Studio " + version,
-        notes: releaseNotes(body),
-        date: typeof item.published_at === "string" ? item.published_at : null,
-        kind: releaseKind(body),
+      const item=candidates[0];
+      const tag=item.tag_name as string;
+      const version=tag.replace(/^v/i,"");
+      const body=typeof item.body==="string"?item.body:"";
+      const found:Release={
+        version,tag,experimental: /-experimental\.\d+$/i.test(tag),
+        title:typeof item.name==="string" && item.name.length>0
+          ?item.name.slice(0,120):"LoopSite Studio "+version,
+        notes:releaseNotes(body),
+        date:typeof item.published_at==="string"?item.published_at:null,
+        kind:releaseKind(body),
       };
       setRelease(found);
-      onStatus("Update " + version + " verfügbar" +
-        (found.kind === "security" ? " (Sicherheitsupdate)." : "."));
+      onStatus("Update " + version + " available" +
+        (found.kind === "security" ? " (security update)." : "."));
       const skipped = localStorage.getItem(SKIPPED_KEY);
       if (manual || skipped !== version) setDialogVisible(true);
     } catch (err) {
       const details = err instanceof Error ? err.message : String(err);
-      setError("Updateprüfung fehlgeschlagen: " + details);
+      setError("Update check failed: " + details);
       if (manual) setDialogVisible(true);
-      onStatus("Updateprüfung fehlgeschlagen. Internetverbindung prüfen.");
+      onStatus("Update check failed. Check your internet connection.");
     } finally {
       pending.current = false;
     }
-  }, [onStatus]);
+  }, [onStatus,includeExperimental,installedExperimental]);
 
   // Startup check, nonblocking: project loading and local servers do not wait for GitHub.
   useEffect(() => {
@@ -146,43 +153,28 @@ export default function UpdateManager({checkSignal, editorDirty, runningServers,
     if (busy || !release) return;
     // Skip exactly this release; a subsequent higher version is shown normally.
     localStorage.setItem(SKIPPED_KEY, release.version);
-    onStatus("Version " + release.version + " übersprungen. Neue Versionen werden weiter geprüft.");
+    onStatus("Version " + release.version + " skipped. Newer versions will still be offered.");
     setDialogVisible(false);
     setError("");
   }
 
   async function install() {
     if (!release || busy || editorDirty) return;
-    setBusy(true);setError("");setTransfer(null);
+    setBusy(true);setError("");
     try {
       if (!signedUpdater) {
-        // Unsigned experimental CI artifacts cannot be silently installed.
-        // Users can still inspect the official published GitHub Release.
-        await openUrl(RELEASE_PAGE);
+        await openUrl(RELEASE_PAGE + "/tag/" + encodeURIComponent(release.tag));
         setDialogVisible(false);
-        onStatus("Release-Seite geöffnet. Für direkte Installation sind signierte Updates erforderlich.");
+        onStatus("Official release page opened. Signed in-app installation is not available in this build.");
         return;
       }
-      const update = await check({ timeout: 20000 });
-      // Only install the same release whose changes were shown to the user.
-      if (!update || update.version.replace(/^v/i, "") !== release.version) {
-        throw new Error("Das signierte Update stimmt nicht mit dem angezeigten Release überein. Bitte erneut prüfen.");
-      }
-      let received = 0;
-      let total: number | null = null;
-      await update.downloadAndInstall(event => {
-        if (event.event === "Started") {
-          received = 0;
-          total = typeof event.data.contentLength === "number" ? event.data.contentLength : null;
-        } else if (event.event === "Progress") {
-          received += event.data.chunkLength;
-        }
-        setTransfer({received,total});
-      });
-      onStatus("Update installiert. LoopSite Studio wird neu gestartet.");
+      // The native updater restricts the URL to our repository and verifies
+      // the public-key signature and the exact version shown in the dialog.
+      await invoke("install_signed_release",{version:release.version,tag:release.tag});
+      onStatus("Update installed. LoopSite Studio will restart.");
       await relaunch();
     } catch (err) {
-      setError("Update konnte nicht installiert werden: " +
+      setError("Could not install update: " +
         (err instanceof Error ? err.message : String(err)));
     } finally {
       setBusy(false);
@@ -190,8 +182,6 @@ export default function UpdateManager({checkSignal, editorDirty, runningServers,
   }
 
   if (!dialogVisible) return null;
-  const percent = transfer?.total && transfer.total > 0
-    ? Math.min(100,Math.round(transfer.received * 100 / transfer.total)) : null;
   return <div className="overlay" role="presentation">
     <section role="dialog" aria-modal="true" aria-labelledby="update-title" className="modal update-modal">
       {release ? <>
@@ -199,11 +189,12 @@ export default function UpdateManager({checkSignal, editorDirty, runningServers,
           <div>
             <p className="eyebrow">LOOPSITE STUDIO · UPDATE</p>
             <h2 id="update-title">{release.title}</h2>
+            <p>{release.experimental ? "Experimental Release" : "Stable Release"}</p>
             <p className="update-versions">v{installedVersion} → v{release.version}
-              {release.date && " · " + new Date(release.date).toLocaleDateString("de-DE")}</p>
+              {release.date && " · " + new Date(release.date).toLocaleDateString("en-US")}</p>
           </div>
           <span className={"update-kind " + (release.kind === "security" ? "security" : "feature")}>
-            {release.kind === "security" ? "Sicherheitsupdate" : "Feature-Update"}
+            {release.kind === "security" ? "Security Update" : "Feature Update"}
           </span>
         </header>
         <div className="update-notes">
@@ -211,33 +202,24 @@ export default function UpdateManager({checkSignal, editorDirty, runningServers,
           <pre>{release.notes}</pre>
         </div>
         {release.kind === "security" &&
-          <p className="update-security-hint">Dieses Release ist als Sicherheitsupdate gekennzeichnet.
-            Die zeitnahe Installation wird empfohlen. Du kannst es dennoch später installieren oder überspringen.</p>}
-        {editorDirty && <p className="update-warning">Du hast ungespeicherte Editor-Änderungen.
-          Speichere diese vor der Installation, damit keine Arbeit verloren geht.</p>}
+          <p className="update-security-hint">This release addresses security issues. We recommend installing it promptly. You can still choose Later or Skip Update.</p>}
+        {editorDirty && <p className="update-warning">You have unsaved editor changes. Save them before installing so no work is lost.</p>}
         {runningServers > 0 &&
-          <p className="update-warning">{runningServers} lokale Server laufen noch.
-            Beim Neustart der Anwendung werden sie beendet.</p>}
-        {!signedUpdater && <p className="update-warning">Diese experimentelle App-Version hat noch
-          keinen signierten In-App-Updater. „Update“ öffnet deshalb die offizielle Release-Seite,
-          auf der du den Installer manuell herunterladen kannst.</p>}
-        {transfer && <div className="update-progress" role="status">
-          <span>Update wird heruntergeladen {percent !== null ? "· " + percent + " %" : "…"}</span>
-          {percent !== null && <progress value={percent} max={100}/>}
-        </div>}
+          <p className="update-warning">{runningServers} local servers are running. They will stop when the application restarts.</p>}
+        {!signedUpdater && <p className="update-warning">This installation cannot self-update. The Update button opens the official release page for manual installation.</p>}
         {error && <p role="alert" className="update-error">{error}</p>}
         <footer className="modal-actions update-actions">
           <button className="subtle" type="button" onClick={skip} disabled={busy}>Skip Update</button>
           <button className="secondary" type="button" onClick={later} disabled={busy}>Later</button>
           <button className="primary" type="button" disabled={busy || editorDirty} onClick={() => void install()}>
-            {busy ? "Installiere …" : signedUpdater ? "Update" : "Update herunterladen"}
+            {busy ? "Installing…" : signedUpdater ? "Update" : "Download Update"}
           </button>
         </footer>
       </> : <>
-        <h2 id="update-title">Updateprüfung</h2>
-        <p className="update-error">{error || "Es konnte kein Update gefunden werden."}</p>
+        <h2 id="update-title">Update Check</h2>
+        <p className="update-error">{error || "No update was found."}</p>
         <div className="modal-actions">
-          <button className="secondary" onClick={later}>Schließen</button>
+          <button className="secondary" onClick={later}>Close</button>
         </div>
       </>}
     </section>

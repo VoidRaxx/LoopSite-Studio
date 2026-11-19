@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -10,6 +11,7 @@ import LogViewer, { type LogTarget } from "./LogViewer";
 import RuntimeInstallPanel from "./RuntimeInstallPanel";
 import UpdateManager from "./UpdateManager";
 import { THEME_OPTIONS, resolveTheme } from "./themes";
+import { languages, translate, type Language } from "./i18n";
 
 type Panel = "projects" | "routing" | "editor" | "php" | "databases" | "setup" | "settings";
 type PhpRuntime = { path: string; version: string; source: string };
@@ -32,6 +34,24 @@ function getError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 export default function App() {
+  const [language, setLanguage] = useState<Language>(() => {
+    const saved = localStorage.getItem("loopsite-language");
+    return languages.find(option => option.id === saved)?.id ?? "en";
+  });
+  const [appVersion, setAppVersion] = useState("0.1.0");
+  const experimentalBuild = /-experimental(?:\.|$)/.test(appVersion);
+  const [includeExperimental, setIncludeExperimental] = useState(() =>
+    localStorage.getItem("loopsite-include-experimental") === "true"
+  );
+  const t = (key: Parameters<typeof translate>[1]) => translate(language, key);
+  useEffect(() => {
+    localStorage.setItem("loopsite-language", language);
+    document.documentElement.lang = language;
+  }, [language]);
+  useEffect(() => {
+    localStorage.setItem("loopsite-include-experimental", String(includeExperimental));
+  }, [includeExperimental]);
+  useEffect(() => { void getVersion().then(setAppVersion).catch(() => {}); }, []);
   const [projects, setProjects] = useState<Project[]>([]);
   const [phpRuntimes, setPhpRuntimes] = useState<PhpRuntime[]>([]);
   const [phpBusy, setPhpBusy] = useState(false);
@@ -338,15 +358,16 @@ export default function App() {
     <aside className="sidebar">
       <div className="brand"><img className="brand-image" src="/loopsite-logo.png" alt="LoopSite Studio" /><div><strong>LoopSite Studio</strong><small>Local Development Environment</small></div></div>
       <nav>
-        <button className={panel === "projects" ? "nav active" : "nav"} onClick={() => navigate("projects")}>▦ <span>Projekte</span></button>
-        <button className={panel === "routing" ? "nav active" : "nav"} onClick={() => navigate("routing")}>◉ <span>Routing</span></button>
-        <button className={panel === "editor" ? "nav active" : "nav"} onClick={() => navigate("editor")}>▤ <span>Editor</span></button>
-        <button className={panel === "databases" ? "nav active" : "nav"} onClick={() => navigate("databases")}>▤ <span>Datenbanken</span></button>
-        <button className={panel === "php" ? "nav active" : "nav"} onClick={() => navigate("php")}>⌘ <span>PHP-Laufzeiten</span></button>
-        <button className={panel === "setup" ? "nav active" : "nav"} onClick={() => navigate("setup")}>↓ <span>Einrichtung</span></button>
-        <button className={panel === "settings" ? "nav active" : "nav"} onClick={() => navigate("settings")}>⚙ <span>Einstellungen</span></button>
+        <button className={panel === "projects" ? "nav active" : "nav"} onClick={() => navigate("projects")}>▦ <span>{t("projects")}</span></button>
+        <button className={panel === "routing" ? "nav active" : "nav"} onClick={() => navigate("routing")}>◉ <span>{t("routing")}</span></button>
+        <button className={panel === "editor" ? "nav active" : "nav"} onClick={() => navigate("editor")}>▤ <span>{t("editor")}</span></button>
+        <button className={panel === "databases" ? "nav active" : "nav"} onClick={() => navigate("databases")}>▤ <span>{t("databases")}</span></button>
+        <button className={panel === "php" ? "nav active" : "nav"} onClick={() => navigate("php")}>⌘ <span>{t("runtimes")}</span></button>
+        <button className={panel === "setup" ? "nav active" : "nav"} onClick={() => navigate("setup")}>↓ <span>{t("setup")}</span></button>
+        <button className={panel === "settings" ? "nav active" : "nav"} onClick={() => navigate("settings")}>⚙ <span>{t("settings")}</span></button>
       </nav>
-      <div className="sidebar-note">Lokal. Privat. Unter deiner Kontrolle.</div>
+      <div className="sidebar-note">{t("tagline")}</div>
+      <div className="sidebar-version" title={appVersion}>v{appVersion} · {experimentalBuild ? t("experimental") : t("development")}</div>
     </aside>
     <main className="main">
       {error && <div className="notice error" role="alert">{error}<button onClick={() => setError("")} aria-label="Fehler schließen">×</button></div>}
@@ -417,6 +438,24 @@ export default function App() {
               </span>
               <strong>{item.label}</strong><small>{item.description}</small>
             </button>)}
+          </div>
+          <div className="ui-size-settings">
+            <h3>{t("language")}</h3><p>{t("languageHint")}</p>
+            <label className="language-select-label">{t("language")}
+              <select value={language} onChange={event => setLanguage(event.target.value as Language)}>
+                {languages.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}
+              </select>
+            </label>
+          </div>
+          <div className="ui-size-settings">
+            <h3>{t("updates")}</h3>
+            <label className="checkbox-label">
+              <input type="checkbox" checked={experimentalBuild || includeExperimental}
+                disabled={experimentalBuild}
+                onChange={event => setIncludeExperimental(event.target.checked)}/>
+              {t("ignoreExperiments")}
+            </label>
+            <p>{t("ignoreHint")}</p>
           </div>
           <div className="ui-size-settings">
             <h3>Updates</h3>
@@ -522,6 +561,7 @@ export default function App() {
       </section>}
     </main>
     <UpdateManager checkSignal={updateCheckSignal} onStatus={setUpdateStatus}
+      includeExperimental={experimentalBuild || includeExperimental} installedExperimental={experimentalBuild}
       editorDirty={editorDirty} runningServers={running.length}/>
     {logTarget && <LogViewer target={logTarget} onClose={() => setLogTarget(null)} />}
     {dialog && <div className="overlay" onMouseDown={event => { if (event.target === event.currentTarget && !busy) setDialog(null); }}>

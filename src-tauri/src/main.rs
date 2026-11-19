@@ -10,10 +10,11 @@ mod sqlite;
 mod maria;
 mod maria_service;
 mod install;
+mod signed_update;
 
 fn signed_updater_ready() -> bool {
     // Never enable the installer in unsigned development/experimental builds.
-    option_env!("LOOPSITE_SIGNED_UPDATES") == Some("1")
+    option_env!("LOOPSITE_SIGNED_UPDATES") == Some("1") && option_env!("LOOPSITE_PORTABLE") != Some("1")
 }
 
 #[tauri::command]
@@ -42,6 +43,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             update_install_ready,
+            signed_update::install_signed_release,
             projects::load_projects,
             projects::save_projects,
             servers::start_server,

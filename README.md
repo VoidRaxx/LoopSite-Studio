@@ -22,7 +22,7 @@ Your feedback and contributions are greatly appreciated!
 
 ## Status
 
-Early development. **No stable production release yet.** Desktop build artifacts from GitHub Actions are experimental and not yet validated through cross-platform end-to-end testing.
+Early development. **No stable production release yet.** CI validates development builds without publishing installers. Official experimental builds will be GitHub prereleases, only after review and explicit approval.
 
 ### Implemented (experimental)
 
@@ -30,7 +30,7 @@ Early development. **No stable production release yet.** Desktop build artifacts
 - PHP and static-site start/stop, status, color-coded searchable live logs (copy/clear), loopback by default, optional LAN binding
 - Local HTTP domain routing through an externally installed Caddy executable
 - Offline Monaco file editor: browsing, multiple tabs, side-by-side code panes, resizable file tree, syntax highlighting, search, replace and guarded saves
-- HybrideUniverse / Dark / White themes
+- Default / Universe / Dark / White and additional unified themes (12 options including system default)
 - Native SQLite database manager: create project databases and tables, preview/insert rows, and import/export consistent `.sqlite3` files
 - Opt-in runtime setup for PHP and Caddy using OS package managers (experimental)
 - Connect to existing local MariaDB/MySQL servers, create databases and preview tables (experimental)
@@ -83,13 +83,17 @@ Test Website (Project)
 - Optional editable PHP router
 - PHP runtime manager and MariaDB / SQLite database management
 - Optional phpMyAdmin, opened separately in a browser
-- Theme choices: HybrideUniverse (default), Dark, White, customizable through theme configuration
+- Consistent, extensible themes with English-first localization and configurable UI density
 
 ## Principles
 
 Local-only by default; no implicit router port forwarding or Internet exposure. Runtime downloads must be verified. Never automatically upgrade a running project's PHP or database major version.
 
 Licensed under the MIT license (see LICENSE).
+
+## Distributions and Releases
+
+The regular CI workflow does **not** publish downloadable installers. All releases require an approved English changelog and manual publication, including experimental GitHub prereleases. Windows NSIS and portable ZIP, Linux DEB/RPM/Arch-native packages and Linux portable AppImage are the target formats. See [Release policy](docs/release-policy.md) for package details, approval gates, and portable data storage.
 
 - Database deletion/archival, table creation and guarded row/cell editing; three UI sizes and six themes (experimental). See `docs/database-ui-and-themes.md`.
 

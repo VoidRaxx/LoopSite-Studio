@@ -80,3 +80,7 @@ The signing key is critical. If lost, future releases cannot update already-inst
 - Only the chosen version is installed; a mismatch between displayed release and signed updater version aborts the operation.
 
 This is an early alpha implementation. Real signed release smoke tests on Windows and Linux are required before declaring the update system production-ready.
+
+## Release control
+
+Normal build validation does not upload downloadable installers. Release publication requires manual dispatch, a matching English changelog, successful Windows/Linux/Arch packaging, signing secrets and explicit approval. For all supported formats and portable storage rules see [Release policy](release-policy.md).

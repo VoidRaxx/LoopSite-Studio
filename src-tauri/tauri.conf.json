@@ -30,6 +30,23 @@
     "icon": [
       "icons/icon.png",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "installerIcon": "icons/icon.ico",
+        "displayLanguageSelector": true,
+        "languages": [
+          "English",
+          "German",
+          "French",
+          "Spanish",
+          "Portuguese",
+          "Italian",
+          "Japanese",
+          "SimpChinese"
+        ]
+      }
+    }
   }
 }

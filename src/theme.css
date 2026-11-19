@@ -233,3 +233,32 @@ a:hover { text-decoration-thickness: 2px; }
   .primary, .secondary, .subtle, .nav, .project-item, .db-select,
   .theme-select, .db-table-tabs button, .db-engine-switch button { transition: none; }
 }
+
+/* Always-visible, unobtrusive version label and localized preferences. */
+.sidebar-version {
+  margin-top: auto;
+  padding: 7px 11px;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: .015em;
+  overflow-wrap: anywhere;
+}
+.language-select-label {
+  display: grid;
+  gap: 7px;
+  max-width: 320px;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 14px;
+}
+.language-select-label select {
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+@media(max-width:640px){
+  .sidebar-version { padding: 4px 2px; font-size: 8px; writing-mode: vertical-rl; align-self: center; }
+}
