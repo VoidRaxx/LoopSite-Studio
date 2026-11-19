@@ -7,12 +7,14 @@ mod editor;
 mod executables;
 mod php;
 mod sqlite;
+mod maria;
 
 fn main() {
     let manager = servers::ServerManager::default();
     tauri::Builder::default()
         .manage(manager)
         .manage(proxy::ProxyManager::default())
+        .manage(maria::MariaManager::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
@@ -36,7 +38,14 @@ fn main() {
             sqlite::create_sqlite_table,
             sqlite::list_sqlite_tables,
             sqlite::read_sqlite_table,
-            sqlite::insert_sqlite_row
+            sqlite::insert_sqlite_row,
+            maria::maria_connect,
+            maria::maria_status,
+            maria::maria_disconnect,
+            maria::maria_list_databases,
+            maria::maria_create_database,
+            maria::maria_list_tables,
+            maria::maria_read_table
         ])
         .on_window_event(|window, event| {
             if matches!(event, tauri::WindowEvent::Destroyed) {

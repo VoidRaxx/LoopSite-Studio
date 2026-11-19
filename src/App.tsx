@@ -5,6 +5,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import type { DomainRoute, Project, Runtime, ServerConfig, Theme } from "./types";
 import EditorPanel from "./EditorPanel";
 import DatabasePanel from "./DatabasePanel";
+import MariaPanel from "./MariaPanel";
 
 type Panel = "projects" | "routing" | "editor" | "php" | "databases" | "settings";
 type PhpRuntime = { path: string; version: string; source: string };
@@ -33,6 +34,7 @@ export default function App() {
   const [editingServerId, setEditingServerId] = useState<string | null>(null);
   const [serverPhpPath, setServerPhpPath] = useState("");
   const [editorDirty, setEditorDirty] = useState(false);
+  const [dbEngine, setDbEngine] = useState<"sqlite" | "maria">("sqlite");
   const [proxy, setProxy] = useState<ProxyStatus>({ running: false, port: null, hostnameCount: 0 });
   const [proxyPort, setProxyPort] = useState("8080");
   const [proxyBusy, setProxyBusy] = useState(false);
@@ -313,7 +315,15 @@ export default function App() {
     </aside>
     <main className="main">
       {error && <div className="notice error" role="alert">{error}<button onClick={() => setError("")} aria-label="Fehler schließen">×</button></div>}
-      {panel === "databases" ? <DatabasePanel project={selected} projects={projects} onSelectProject={setSelectedId}/> : panel === "php" ? <section>
+      {panel === "databases" ? <>
+        <div className="db-engine-switch" role="group" aria-label="Datenbanktyp">
+          <button className={dbEngine === "sqlite" ? "selected" : ""} onClick={() => setDbEngine("sqlite")}>SQLite</button>
+          <button className={dbEngine === "maria" ? "selected" : ""} onClick={() => setDbEngine("maria")}>MariaDB / MySQL</button>
+        </div>
+        {dbEngine === "sqlite"
+          ? <DatabasePanel project={selected} projects={projects} onSelectProject={setSelectedId}/>
+          : <MariaPanel/>}
+      </> : panel === "php" ? <section>
         <div className="page-heading">
           <div><p className="eyebrow">RUNTIMES</p><h1>PHP-Laufzeiten</h1>
             <p>Erkannte PHP-Versionen verwalten und einzelnen Servern zuordnen.</p></div>

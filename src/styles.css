@@ -73,3 +73,11 @@
 .db-data td em{color:var(--muted)}
 .db-note{padding:10px 14px;border:1px solid var(--line);border-radius:9px;background:var(--accent-bg);font-size:12px;margin-bottom:15px}
 @media(max-width:900px){.db-layout{grid-template-columns:1fr}.db-column-form{grid-template-columns:1fr 120px 80px 20px}}
+
+.db-engine-switch{display:flex;align-items:center;gap:6px;margin-bottom:25px;border-bottom:1px solid var(--line);padding-bottom:15px}
+.db-engine-switch button{border:1px solid var(--line);border-radius:9px;background:transparent;color:var(--muted);padding:10px 15px}
+.db-engine-switch button.selected{background:var(--accent-bg);color:var(--text)}
+.db-connect-grid{display:grid;grid-template-columns:1fr 110px;gap:14px}
+.db-connect-grid label:nth-child(3),.db-connect-grid label:nth-child(4){grid-column:span 1}
+.maria-connect{max-width:750px}
+@media(max-width:650px){.db-connect-grid{grid-template-columns:1fr}}
