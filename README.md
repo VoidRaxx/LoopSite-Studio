@@ -1,5 +1,7 @@
 # LoopSite Studio
 
+<img src="./public/loopsite-logo.png" alt="LoopSite Studio logo" width="110" />
+
 A desktop-first local development environment for Windows and Linux.
 
 ## Disclaimer
