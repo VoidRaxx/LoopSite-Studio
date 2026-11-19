@@ -144,6 +144,8 @@ jobs:
     runs-on: ubuntu-latest
     container: archlinux:latest
     steps:
+      - name: Install git for checkout
+        run: pacman -Sy --noconfirm --needed git
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.tag }}
@@ -157,16 +159,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cp src-tauri/target/release/loopsite-studio packaging/arch/loopsite-studio
-          cp src-tauri/icons/icon.png packaging/arch/loopsite-studio.png
+          mkdir -p /tmp/loopsite-arch-pkg
+          cp packaging/arch/PKGBUILD packaging/arch/loopsite-studio.desktop /tmp/loopsite-arch-pkg/
+          cp src-tauri/target/release/loopsite-studio /tmp/loopsite-arch-pkg/loopsite-studio
+          cp src-tauri/icons/icon.png /tmp/loopsite-arch-pkg/loopsite-studio.png
           version="${{ inputs.tag }}"
           version="${version#v}"
-          sed -i "s/^pkgver=.*/pkgver=${version//-/_}/" packaging/arch/PKGBUILD
-          useradd -m -s /bin/bash pkgbuild
-          chown -R pkgbuild:pkgbuild packaging/arch
-          su pkgbuild -s /bin/bash -c 'cd "$GITHUB_WORKSPACE/packaging/arch" && makepkg -f --noconfirm --nodeps'
+          sed -i "s/^pkgver=.*/pkgver=${version//-/_}/" /tmp/loopsite-arch-pkg/PKGBUILD
+          useradd --create-home --shell /bin/bash pkgbuild
+          chown -R pkgbuild:pkgbuild /tmp/loopsite-arch-pkg
+          su -s /bin/bash pkgbuild -c 'cd /tmp/loopsite-arch-pkg && makepkg -f --noconfirm --nodeps'
           mkdir -p release-files
-          find packaging/arch -name '*.pkg.tar.zst' -exec cp {} release-files/ \;
+          find /tmp/loopsite-arch-pkg -name '*.pkg.tar.zst' -exec cp {} release-files/ \;
           test "$(find release-files -name '*.pkg.tar.zst' | wc -l)" -gt 0
       - uses: actions/upload-artifact@v4
         with:

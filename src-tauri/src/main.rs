@@ -12,9 +12,27 @@ mod maria_service;
 mod install;
 mod signed_update;
 
-fn signed_updater_ready() -> bool {
-    // Never enable the installer in unsigned development/experimental builds.
-    option_env!("LOOPSITE_SIGNED_UPDATES") == Some("1") && option_env!("LOOPSITE_PORTABLE") != Some("1")
+pub(crate) fn signed_updater_ready() -> bool {
+    // Never install over a portable executable or a system package.
+    if option_env!("LOOPSITE_SIGNED_UPDATES") != Some("1")
+        || option_env!("LOOPSITE_PORTABLE") == Some("1") {
+        return false;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        // On Linux only signed AppImage builds can self-update.
+        // .deb/.rpm/.pkg.tar.zst installations must use their package manager.
+        return std::env::var_os("APPIMAGE")
+            .filter(|v| !v.is_empty()).is_some();
+    }
+    #[cfg(windows)]
+    {
+        return true; // Signed NSIS installers are the only Windows release flavor.
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
+    {
+        false
+    }
 }
 
 #[tauri::command]

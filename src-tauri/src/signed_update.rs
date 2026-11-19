@@ -22,8 +22,7 @@ fn safe_release(tag:&str, version:&str)->bool{
 
 #[tauri::command]
 pub async fn install_signed_release(app:AppHandle,tag:String,version:String)->Result<(),String>{
-    if option_env!("LOOPSITE_SIGNED_UPDATES")!=Some("1") ||
-       option_env!("LOOPSITE_PORTABLE")==Some("1") {
+    if !crate::signed_updater_ready() {
         return Err("Automatic installation requires an official signed, installed build.".into());
     }
     if !safe_release(&tag,&version) {

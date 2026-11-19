@@ -1,0 +1,48 @@
+name: Arch Linux package validation
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: arch-build-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  arch-pacman:
+    runs-on: ubuntu-24.04
+    container: archlinux:latest
+    timeout-minutes: 90
+    steps:
+      - name: Prepare Git for checkout
+        run: pacman -Sy --noconfirm --needed git
+      - uses: actions/checkout@v4
+      - name: Install Arch build dependencies
+        run: |
+          pacman -Syu --noconfirm --needed base-devel rust cargo nodejs npm \
+            webkit2gtk-4.1 gtk3 libayatana-appindicator librsvg openssl pkgconf
+      - name: Verify frontend
+        run: |
+          npm install
+          npm run build
+      - name: Compile Arch-native desktop executable
+        env:
+          CARGO_BUILD_JOBS: '2'
+        run: npx tauri build --no-bundle
+      - name: Create and inspect pacman package without publishing it
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/loopsite-arch-pkg
+          cp packaging/arch/PKGBUILD packaging/arch/loopsite-studio.desktop /tmp/loopsite-arch-pkg/
+          cp src-tauri/target/release/loopsite-studio /tmp/loopsite-arch-pkg/loopsite-studio
+          cp src-tauri/icons/icon.png /tmp/loopsite-arch-pkg/loopsite-studio.png
+          version="$(node -p "require('./package.json').version")"
+          sed -i "s/^pkgver=.*/pkgver=${version//-/_}/" /tmp/loopsite-arch-pkg/PKGBUILD
+          useradd --create-home --shell /bin/bash pkgbuild
+          chown -R pkgbuild:pkgbuild /tmp/loopsite-arch-pkg
+          su -s /bin/bash pkgbuild -c 'cd /tmp/loopsite-arch-pkg && makepkg -f --noconfirm --nodeps'
+          package="$(find /tmp/loopsite-arch-pkg -maxdepth 1 -type f -name '*.pkg.tar.zst' -print -quit)"
+          test -s "$package"
+          pacman -Qip "$package"
+          echo "Arch native package built and validated; no download artifact published."
