@@ -96,6 +96,7 @@ Licensed under the MIT license (see LICENSE).
 - [How to contribute](CONTRIBUTING.md)
 - [Code of Conduct](CODE_OF_CONDUCT.md)
 - [Security Policy](SECURITY.md)
+- [Accessibility Statement](ACCESSIBILITY.md)
 - [Bug reports and feature requests](https://github.com/VoidRaxx/LoopSite-Studio/issues/new/choose)
 - [Pull requests](https://github.com/VoidRaxx/LoopSite-Studio/pulls)
 
