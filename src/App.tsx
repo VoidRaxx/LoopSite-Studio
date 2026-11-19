@@ -4,7 +4,8 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { DomainRoute, Project, Runtime, ServerConfig, Theme } from "./types";
 
-type Panel = "projects" | "settings";
+type Panel = "projects" | "routing" | "settings";
+type ProxyStatus = { running: boolean; port: number | null; hostnameCount: number };
 type RunningServer = { projectId: string; serverId: string; port: number; lanAccess: boolean };
 type Dialog = "project" | "server" | "domain" | null;
 const uid = () => crypto.randomUUID();
@@ -24,6 +25,9 @@ function getError(error: unknown): string {
 }
 export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
+  const [proxy, setProxy] = useState<ProxyStatus>({ running: false, port: null, hostnameCount: 0 });
+  const [proxyPort, setProxyPort] = useState("8080");
+  const [proxyBusy, setProxyBusy] = useState(false);
   const [running, setRunning] = useState<RunningServer[]>([]);
   const [activeLog, setActiveLog] = useState<string | null>(null);
   const [logText, setLogText] = useState("");
@@ -46,7 +50,7 @@ export default function App() {
   const [serverLan, setServerLan] = useState(false);
   const [domainHost, setDomainHost] = useState("");
   const [domainServerId, setDomainServerId] = useState("");
-  const [domainHttps, setDomainHttps] = useState(true);
+  const [domainHttps, setDomainHttps] = useState(false);
 
   useEffect(() => {
     invoke<Project[]>("load_projects")
@@ -66,10 +70,42 @@ export default function App() {
       if (alive) setRunning(data);
     }).catch(err => { if (alive) setError("Serverstatus: " + getError(err)); });
     void refresh();
-    const timer = window.setInterval(refresh, 2000);
+    const refreshProxy = () => invoke<ProxyStatus>("proxy_status").then(data => {
+      if (alive) setProxy(data);
+    }).catch(err => { if (alive) setError("Proxy-Status: " + getError(err)); });
+    void refreshProxy();
+    const timer = window.setInterval(() => { refresh(); refreshProxy(); }, 2000);
     return () => { alive = false; window.clearInterval(timer); };
   }, []);
 
+  async function toggleProxy() {
+    if (!proxy.running && (!/^[0-9]+$/.test(proxyPort) || Number(proxyPort) < 1 || Number(proxyPort) > 65535)) {
+      setError("Proxy-Port muss zwischen 1 und 65535 liegen."); return;
+    }
+    setProxyBusy(true); setError("");
+    try {
+      if (proxy.running) {
+        await invoke("stop_proxy");
+      } else {
+        await invoke("start_proxy", { port: Number(proxyPort) });
+      }
+      setProxy(await invoke<ProxyStatus>("proxy_status"));
+    } catch (err) {
+      setError("Domain-Routing: " + getError(err));
+    } finally { setProxyBusy(false); }
+  }
+  async function showProxyLog() {
+    try {
+      const log = await invoke<string>("read_proxy_log");
+      setLogText(log); setActiveLog("proxy");
+    } catch (err) { setError("Proxy-Log: " + getError(err)); }
+  }
+  async function openDomainUrl(hostname: string) {
+    if (!proxy.running || proxy.port === null) return;
+    const port = proxy.port === 80 ? "" : ":" + proxy.port;
+    try { await openUrl("http://" + hostname + port); }
+    catch (err) { setError("Domain konnte nicht geöffnet werden: " + getError(err)); }
+  }
   async function toggleServer(projectId: string, serverId: string, isRunning: boolean) {
     setBusy(true); setError("");
     try {
@@ -125,7 +161,7 @@ export default function App() {
   function openDomain() {
     if (!selected || selected.servers.length === 0) return;
     setDomainHost(""); setDomainServerId(selected.servers[0].id);
-    setDomainHttps(true); setDialog("domain"); setError("");
+    setDomainHttps(false); setDialog("domain"); setError("");
   }
   async function createProject() {
     if (!projectName.trim() || !projectRoot.trim()) { setError("Name und Projektordner sind erforderlich."); return; }
@@ -187,6 +223,7 @@ export default function App() {
       <div className="brand"><div className="brand-icon">L</div><div><strong>LoopSite Studio</strong><small>Local Development Environment</small></div></div>
       <nav>
         <button className={panel === "projects" ? "nav active" : "nav"} onClick={() => setPanel("projects")}>▦ <span>Projekte</span></button>
+        <button className={panel === "routing" ? "nav active" : "nav"} onClick={() => setPanel("routing")}>◉ <span>Routing</span></button>
         <button className={panel === "settings" ? "nav active" : "nav"} onClick={() => setPanel("settings")}>⚙ <span>Einstellungen</span></button>
       </nav>
       <div className="sidebar-note">Lokal. Privat. Unter deiner Kontrolle.</div>
@@ -202,6 +239,35 @@ export default function App() {
               <strong>{id === "hu" ? "HybrideUniverse" : id === "dark" ? "Dark" : "White"}</strong>
             </button>)}
           </div>
+        </div>
+      </section> : panel === "routing" ? <section>
+        <div className="page-heading"><div><p className="eyebrow">LOCAL ROUTING</p><h1>Domains &amp; Subdomains</h1>
+          <p>Lokale Hostnamen aller Projekte über einen gemeinsamen HTTP-Proxy erreichen.</p></div></div>
+        <div className="card settings" style={{marginBottom:22}}>
+          <div className="section-head" style={{marginTop:0}}>
+            <div><h3>Lokaler Reverse Proxy</h3><p>Benötigt Caddy im System-PATH. Standardport 8080 ist ohne Administratorrechte nutzbar.</p></div>
+            <span className="status">{proxy.running ? "Läuft" : "Gestoppt"}</span>
+          </div>
+          <div className="proxy-actions">
+            <label>Proxy-Port<input type="number" min="1" max="65535" value={proxy.running && proxy.port ? proxy.port : proxyPort}
+              onChange={e => setProxyPort(e.target.value)} disabled={proxy.running || proxyBusy} /></label>
+            <button className="primary" onClick={() => void toggleProxy()} disabled={proxyBusy || busy}>
+              {proxyBusy ? "Bitte warten …" : proxy.running ? "Proxy stoppen" : "Proxy starten"}
+            </button>
+            {proxy.running && <button className="secondary" onClick={() => void showProxyLog()}>Log anzeigen</button>}
+          </div>
+          <p className="hint">Routing ist aktuell HTTP-only. HTTPS und automatische Caddy-Installation folgen. Für .localhost-Domains kann die lokale Auflösung verwendet werden; andere Domains benötigen eine passende hosts-/DNS-Konfiguration. Nach Domainänderungen den Proxy neu starten. Der Proxy bindet ausschließlich an 127.0.0.1.</p>
+        </div>
+        <div className="card settings">
+          <h2>Aktuelle Domain-Zuordnungen</h2>
+          {projects.flatMap(p => p.domains.map(d => {
+            const server = p.servers.find(s => s.id === d.serverId);
+            return <article className="item-card" key={p.id + "/" + d.id}>
+              <div><strong>{d.hostname}</strong><p>{p.name} → {server?.name ?? "Kein Server"} (:{server?.port ?? "?"})</p></div>
+              <button className="secondary" disabled={!proxy.running} onClick={() => void openDomainUrl(d.hostname)}>Öffnen</button>
+            </article>;
+          }))}
+          {projects.every(p => p.domains.length === 0) && <div className="empty-section">Noch keine Domains eingerichtet. Lege sie im jeweiligen Projekt an.</div>}
         </div>
       </section> : <section>
         <div className="page-heading"><div><p className="eyebrow">WORKSPACE</p><h1>Meine Projekte</h1><p>Jedes Projekt verwaltet eigene Server und Domains.</p></div><button className="primary" onClick={openProject} disabled={busy}>+ Neues Projekt</button></div>
@@ -238,7 +304,7 @@ export default function App() {
               {selected.domains.length === 0 && <div className="empty-section">Noch keine Domains konfiguriert.</div>}
               {selected.domains.map(d => {
                 const server = selected.servers.find(s => s.id === d.serverId);
-                return <article className="item-card" key={d.id}><div><strong>{d.hostname}</strong><p>{d.https ? "HTTPS" : "HTTP"} → {server?.name ?? "Unbekannter Server"} :{server?.port}</p></div>
+                return <article className="item-card" key={d.id}><div><strong>{d.hostname}</strong><p>HTTP → {server?.name ?? "Unbekannter Server"} :{server?.port}{d.https ? " · HTTPS geplant" : ""}</p></div>
                   <button className="icon-button" title="Domain entfernen" onClick={() => void deleteDomain(d)} disabled={busy}>×</button></article>;
               })}
               <div className="hint">PHP- und statische Server können lokal gestartet und gestoppt werden. Domain-Routing, Runtime-Downloads und Datenbanken folgen in späteren Entwicklungsschritten.</div>
@@ -247,7 +313,7 @@ export default function App() {
         </div>
       </section>}
     </main>
-    {activeLog && <div className="overlay" onMouseDown={e => { if (e.target === e.currentTarget) setActiveLog(null); }}><div className="modal"><h2>PHP-Serverprotokoll</h2><pre style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere",maxHeight:"55vh",overflow:"auto",fontSize:12}}>{logText || "Keine Ausgabe vorhanden."}</pre><button className="secondary" onClick={() => setActiveLog(null)}>Schließen</button></div></div>}
+    {activeLog && <div className="overlay" onMouseDown={e => { if (e.target === e.currentTarget) setActiveLog(null); }}><div className="modal"><h2>{activeLog === "proxy" ? "Reverse-Proxy-Protokoll" : "PHP-Serverprotokoll"}</h2><pre style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere",maxHeight:"55vh",overflow:"auto",fontSize:12}}>{logText || "Keine Ausgabe vorhanden."}</pre><button className="secondary" onClick={() => setActiveLog(null)}>Schließen</button></div></div>}
     {dialog && <div className="overlay" onMouseDown={event => { if (event.target === event.currentTarget && !busy) setDialog(null); }}>
       <form className="modal" onSubmit={event => { event.preventDefault(); void (dialog === "project" ? createProject() : dialog === "server" ? createServer() : createDomain()); }}>
         <h2>{dialog === "project" ? "Neues Projekt" : dialog === "server" ? "Server hinzufügen" : "Domain hinzufügen"}</h2>
@@ -265,7 +331,7 @@ export default function App() {
         {dialog === "domain" && <>
           <label>Hostname<input autoFocus value={domainHost} onChange={e => setDomainHost(e.target.value)} placeholder="api.meinprojekt.localhost" required/></label>
           <label>Zielserver<select value={domainServerId} onChange={e => setDomainServerId(e.target.value)}>{selected?.servers.map(s => <option key={s.id} value={s.id}>{s.name} (:{s.port})</option>)}</select></label>
-          <label className="checkbox-label"><input type="checkbox" checked={domainHttps} onChange={e => setDomainHttps(e.target.checked)}/> HTTPS für diese Domain vorsehen</label>
+          <div className="hint">.localhost funktioniert in vielen lokalen Browsern ohne hosts-Datei. Eigene Domains erfordern eine lokale Namensauflösung. HTTPS ist noch nicht implementiert.</div>
         </>}
         <div className="modal-actions"><button type="button" className="secondary" onClick={() => setDialog(null)} disabled={busy}>Abbrechen</button><button type="submit" className="primary" disabled={busy}>Speichern</button></div>
       </form>

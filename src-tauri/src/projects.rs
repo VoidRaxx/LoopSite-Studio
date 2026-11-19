@@ -40,6 +40,11 @@ fn projects_file(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(dir.join("projects.json"))
 }
 
+fn valid_identifier(value: &str) -> bool {
+    !value.is_empty() && value.len() <= 80 &&
+        value.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+
 fn valid_hostname(host: &str) -> bool {
     if host.len() > 253 || host.is_empty() || host != host.to_ascii_lowercase() {
         return false;
@@ -63,7 +68,7 @@ fn validate(projects: &[Project]) -> Result<(), String> {
     let mut all_hostnames = HashSet::new();
 
     for project in projects {
-        if project.id.trim().is_empty() || !project_ids.insert(project.id.as_str()) {
+        if !valid_identifier(&project.id) || !project_ids.insert(project.id.as_str()) {
             return Err("Ungültige oder doppelte Projekt-ID.".into());
         }
         if project.name.trim().is_empty() || project.name.len() > 80 {
@@ -75,7 +80,7 @@ fn validate(projects: &[Project]) -> Result<(), String> {
 
         let mut server_ids = HashSet::new();
         for server in &project.servers {
-            if server.id.trim().is_empty() || !server_ids.insert(server.id.as_str()) {
+            if !valid_identifier(&server.id) || !server_ids.insert(server.id.as_str()) {
                 return Err("Doppelte oder ungültige Server-ID.".into());
             }
             if server.name.trim().is_empty() || server.name.len() > 80 {
@@ -99,7 +104,7 @@ fn validate(projects: &[Project]) -> Result<(), String> {
 
         let mut domain_ids = HashSet::new();
         for domain in &project.domains {
-            if domain.id.trim().is_empty() || !domain_ids.insert(domain.id.as_str()) {
+            if !valid_identifier(&domain.id) || !domain_ids.insert(domain.id.as_str()) {
                 return Err("Doppelte oder ungültige Domain-ID.".into());
             }
             if !server_ids.contains(domain.server_id.as_str()) {
@@ -133,7 +138,13 @@ pub fn save_projects(app: AppHandle, projects: Vec<Project>) -> Result<(), Strin
     let parent = path.parent().ok_or("Kein Konfigurationsverzeichnis gefunden.")?;
     fs::create_dir_all(parent).map_err(|err| err.to_string())?;
     let json = serde_json::to_vec_pretty(&projects).map_err(|err| err.to_string())?;
-    fs::write(path, json).map_err(|err| err.to_string())
+    let tmp_path = path.with_extension(format!("json.tmp.{}", std::process::id()));
+    fs::write(&tmp_path, json).map_err(|err| err.to_string())?;
+    if let Err(err) = fs::rename(&tmp_path, &path) {
+        let _ = fs::remove_file(&tmp_path);
+        return Err(format!("Projektkonfiguration konnte nicht sicher gespeichert werden: {err}"));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
