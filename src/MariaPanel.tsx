@@ -293,7 +293,7 @@ export default function MariaPanel() {
               </label>)}</div>
               <div className="db-controls"><button type="button" className="secondary" onClick={()=>setShowInsert(false)}>Abbrechen</button>
                 <button type="submit" className="primary" disabled={busy}>Datensatz speichern</button></div>
-            </form>
+            </form>}
             {edit && <form className="db-form" onSubmit={e=>void saveEdit(e)}>
               <h3>{edit.column} bearbeiten</h3>
               <p className="db-muted">Primärschlüssel: {preview?.primaryKey} = {edit.keyValue}</p>
