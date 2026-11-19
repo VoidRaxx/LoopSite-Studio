@@ -2,6 +2,22 @@
 
 A desktop-first local development environment for Windows and Linux.
 
+## Disclaimer
+
+**This project is currently 100% vibe-coded.**
+
+Due to limited time and other priorities, this project has been developed entirely with the assistance of AI. As a result, some parts of the code may not follow best practices, and bugs, unexpected behavior, or performance issues may occur.
+
+In the future, I plan to gradually review, refactor, and improve the codebase to reduce its reliance on AI-generated code and ensure better code quality, security, stability, and maintainability.
+
+**Found a bug or an issue?**
+
+If you encounter any bugs, unexpected behavior, security vulnerabilities, or have suggestions for improvements, please feel free to open an issue or submit a pull request.
+
+Your feedback and contributions are greatly appreciated!
+
+**Please keep in mind:** This is a work in progress, and improvements will be made as time allows.
+
 ## Status
 
 Early development. **Not yet a downloadable or production-ready application.** The project model and architecture are being implemented before server/runtime management.
