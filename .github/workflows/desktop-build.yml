@@ -29,6 +29,26 @@ jobs:
       - run: npm install
       - run: npm run build
       - run: cd src-tauri && cargo test
+      - name: Start isolated MariaDB test container
+        if: runner.os == 'Linux'
+        run: |
+          docker run -d --name loopsite-mariadb-ci -p 127.0.0.1:3307:3306 \
+            -e MARIADB_ROOT_PASSWORD=LoopSiteCiTestOnly123 \
+            -e MARIADB_ROOT_HOST=% mariadb:11.4
+          for attempt in $(seq 1 50); do
+            if docker exec loopsite-mariadb-ci mariadb-admin ping -uroot -pLoopSiteCiTestOnly123 --silent 2>/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs loopsite-mariadb-ci
+          exit 1
+      - name: MariaDB end-to-end integration test
+        if: runner.os == 'Linux'
+        env:
+          LOOPSITE_CI_MARIA_PORT: '3307'
+          LOOPSITE_CI_MARIA_PASSWORD: LoopSiteCiTestOnly123
+        run: cd src-tauri && cargo test real_mariadb_integration_when_configured
       - name: Build native installers
         env:
           CARGO_BUILD_JOBS: '2'

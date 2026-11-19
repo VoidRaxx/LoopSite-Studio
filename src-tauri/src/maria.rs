@@ -120,6 +120,24 @@ pub fn maria_list_tables(state:State<'_,MariaManager>,database:String)->Result<V
     ).map_err(|e|e.to_string()))
 }
 
+
+fn projection(columns:&[(String,String)])->Result<String,String>{
+    let mut expressions=Vec::with_capacity(columns.len());
+    for (name,kind) in columns {
+        let col=quoted(name)?;
+        let binary=matches!(kind.to_ascii_lowercase().as_str(),
+            "binary"|"varbinary"|"tinyblob"|"blob"|"mediumblob"|"longblob"|"bit"|"geometry");
+        if binary {
+            expressions.push(format!(
+                "IF({col} IS NULL, NULL, CONCAT('[Binärdaten: ', OCTET_LENGTH({col}), ' Bytes]')) AS {col}"
+            ));
+        }else{
+            expressions.push(format!("LEFT(CAST({col} AS CHAR CHARACTER SET utf8mb4), 800) AS {col}"));
+        }
+    }
+    Ok(expressions.join(", "))
+}
+
 fn value_json(v:Value)->serde_json::Value{
     match v{
         Value::NULL=>serde_json::Value::Null,
@@ -149,17 +167,19 @@ pub fn maria_read_table(state:State<'_,MariaManager>,database:String,table:Strin
     let schema=quoted(&database)?;
     let tbl=quoted(&table)?;
     with_conn(state,|conn|{
-        let columns:Vec<String>=conn.exec(
-            "SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? ORDER BY ORDINAL_POSITION",
+        let schema_columns:Vec<(String,String)>=conn.exec(
+            "SELECT COLUMN_NAME, DATA_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? ORDER BY ORDINAL_POSITION",
             (&database,&table)
         ).map_err(|e|e.to_string())?;
-        if columns.is_empty(){return Err("Tabelle nicht gefunden oder keine Berechtigung.".into())}
-        if columns.len()>64{return Err("Maximal 64 Spalten können angezeigt werden.".into())}
-        let rows:Vec<Row>=conn.query(format!("SELECT * FROM {schema}.{tbl} LIMIT {}",MAX_ROWS+1))
+        if schema_columns.is_empty(){return Err("Tabelle nicht gefunden oder keine Berechtigung.".into())}
+        if schema_columns.len()>64{return Err("Maximal 64 Spalten können angezeigt werden.".into())}
+        // Bound result payload per cell, including for multi-MiB BLOB columns.
+        let projection=projection(&schema_columns)?;
+        let rows:Vec<Row>=conn.query(format!("SELECT {projection} FROM {schema}.{tbl} LIMIT {}",MAX_ROWS+1))
             .map_err(|e|e.to_string())?;
         let truncated=rows.len()>MAX_ROWS;
         Ok(MariaTableData{
-            columns,
+            columns:schema_columns.into_iter().map(|(name,_)|name).collect(),
             rows:rows.into_iter().take(MAX_ROWS).map(|r|r.unwrap().into_iter().map(value_json).collect()).collect(),
             truncated,
         })
@@ -183,6 +203,32 @@ mod tests{
         }
         assert!(quoted("bad\nquery").is_err());
         assert_eq!(quoted("a").unwrap(),format!("{0}a{0}",char::from(96)));
+    }
+    #[test] fn preview_never_fetches_entire_blob() {
+        let query=projection(&[("picture".into(),"longblob".into()),("body".into(),"longtext".into())]).unwrap();
+        assert!(query.contains("OCTET_LENGTH"));
+        assert!(query.contains("LEFT(CAST"));
+    }
+    #[test] fn real_mariadb_integration_when_configured(){
+        let Ok(port)=std::env::var("LOOPSITE_CI_MARIA_PORT") else {return};
+        let port:u16=port.parse().expect("CI port must be numeric");
+        let password=std::env::var("LOOPSITE_CI_MARIA_PASSWORD").expect("CI test password required");
+        let options=OptsBuilder::new()
+            .ip_or_hostname(Some("127.0.0.1")).tcp_port(port).prefer_socket(false)
+            .user(Some("root")).pass(Some(password.as_str()))
+            .tcp_connect_timeout(Some(Duration::from_secs(5)));
+        let mut conn=Conn::new(options).expect("CI MariaDB instance unavailable");
+        let name=format!("loopsite_ci_{}",std::process::id());
+        conn.query_drop(format!("CREATE DATABASE {}",quoted(&name).unwrap())).unwrap();
+        let result=(|| -> mysql::Result<()> {
+            conn.query_drop(format!("CREATE TABLE {}.sample(id INT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(80))",quoted(&name).unwrap()))?;
+            conn.exec_drop(format!("INSERT INTO {}.sample(name) VALUES (?)",quoted(&name).unwrap()),("LoopSite",))?;
+            let row:Option<String>=conn.query_first(format!("SELECT name FROM {}.sample LIMIT 1",quoted(&name).unwrap()))?;
+            assert_eq!(row.as_deref(),Some("LoopSite"));
+            Ok(())
+        })();
+        conn.query_drop(format!("DROP DATABASE {}",quoted(&name).unwrap())).unwrap();
+        result.unwrap();
     }
     #[test] fn masks_binary_values(){
         assert_eq!(value_json(Value::NULL),serde_json::Value::Null);
