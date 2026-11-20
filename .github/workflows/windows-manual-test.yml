@@ -1,0 +1,50 @@
+name: Windows experimental installer (manual test)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Install dependencies
+        run: npm ci
+      - name: Validate Windows per-user install policy
+        shell: pwsh
+        run: |
+          $config = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          if ($config.bundle.windows.nsis.installMode -ne 'currentUser') {
+            throw 'Installer must not require administrator rights.'
+          }
+          if ($config.bundle.createUpdaterArtifacts -eq $true) {
+            throw 'Manual test installer must not require signing keys.'
+          }
+      - name: Validate frontend
+        run: npm run build
+      - name: Build unsigned NSIS installer (no in-app updater)
+        run: npx tauri build --bundles nsis
+        env:
+          CARGO_BUILD_JOBS: '2'
+          CARGO_INCREMENTAL: '0'
+      - name: Validate installer
+        shell: pwsh
+        run: |
+          $files = @(Get-ChildItem 'src-tauri/target/release/bundle/nsis/*-setup.exe' -ErrorAction Stop)
+          if ($files.Count -ne 1 -or $files[0].Length -lt 1000000) {
+            throw 'Expected exactly one nonempty Windows NSIS installer.'
+          }
+      - name: Upload private workflow test artifact (not a GitHub Release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: LoopSite-Studio-Windows-Experimental-Unsigned-Setup
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+          retention-days: 3
