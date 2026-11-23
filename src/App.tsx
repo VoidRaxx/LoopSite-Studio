@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -62,7 +62,12 @@ export default function App() {
   const [phpBusy, setPhpBusy] = useState(false);
   const [editingServerId, setEditingServerId] = useState<string | null>(null);
   const [serverPhpPath, setServerPhpPath] = useState("");
-  const [editorDirty, setEditorDirty] = useState(false);
+  const [visitedEditors, setVisitedEditors] = useState<string[]>([]);
+  const [dirtyProjects, setDirtyProjects] = useState<Record<string, boolean>>({});
+  const editorDirty = projects.some(p => dirtyProjects[p.id]);
+  const reportDirty = useCallback((id: string, dirty: boolean) => {
+    setDirtyProjects(previous => previous[id] === dirty ? previous : { ...previous, [id]: dirty });
+  }, []);
   const [dbEngine, setDbEngine] = useState<"sqlite" | "maria">("sqlite");
   const [updateCheckSignal, setUpdateCheckSignal] = useState(0);
   const [updateStatus, setUpdateStatus] = useState("Noch nicht geprüft.");
@@ -315,6 +320,7 @@ export default function App() {
   }
   async function deleteProject(project: Project) {
     if (running.some(r => r.projectId === project.id)) { setError("Bitte alle Server dieses Projekts zuerst stoppen."); return; }
+    if (dirtyProjects[project.id]) { setError("Bitte offene Editoränderungen zuerst speichern oder verwerfen."); return; }
     if (!window.confirm('Projekt "' + project.name + '" aus LoopSite entfernen? Dateien auf der Festplatte bleiben erhalten.')) return;
     const next = projects.filter(p => p.id !== project.id);
     if (await persist(next)) setSelectedId(next[0]?.id ?? null);
@@ -346,18 +352,13 @@ export default function App() {
   }, [editorDirty]);
 
   function navigate(next: Panel) {
-    if (panel === next) return;
-    if (panel === "editor" && editorDirty &&
-        !window.confirm("Ungespeicherte Editoränderungen verwerfen?")) return;
-    setEditorDirty(false);
     setPanel(next);
   }
-  function switchEditorProject(id: string) {
-    if (selectedId === id) return;
-    if (editorDirty && !window.confirm("Ungespeicherte Editoränderungen verwerfen?")) return;
-    setEditorDirty(false);
-    setSelectedId(id);
-  }
+  useEffect(() => {
+    if (panel === "editor" && selectedId) {
+      setVisitedEditors(ids => ids.includes(selectedId) ? ids : [...ids, selectedId]);
+    }
+  }, [panel, selectedId]);
 
   return <div className="app" data-layout={layout}>
     <aside className="sidebar">
@@ -410,8 +411,8 @@ export default function App() {
             Bestehende Server mit fest zugewiesener Version bleiben unverändert.
             Unter „Einrichtung“ kannst du fehlendes PHP über den System-Paketmanager installieren.</p>
         </div>
-      </section> : panel === "editor" ? <EditorPanel project={selected} projects={projects} theme={activeTheme.id}
-        onSelectProject={switchEditorProject} onDirtyChange={setEditorDirty}/> : panel === "settings" ? <section>
+      </section> : panel === "editor" ? (!selected && <div className="empty"><h2>{t("projects")}</h2>
+        <button className="primary" onClick={() => navigate("projects")}>{t("projects")}</button></div>) : panel === "settings" ? <section>
         <div className="page-heading"><h1>{t("settings")}</h1></div>
         <div className="card settings">
           <h2>{t("appearance")}</h2>
@@ -545,6 +546,14 @@ export default function App() {
           </div>
         </div>
       </section>}
+      {projects.filter(p => visitedEditors.includes(p.id)).map(project => {
+        const visible = panel === "editor" && project.id === selectedId;
+        return <div key={project.id} hidden={!visible}>
+          <EditorPanel project={project} projects={projects} theme={activeTheme.id} visible={visible}
+            onSelectProject={setSelectedId} onDirtyChange={reportDirty}
+            running={running} serverBusy={busy} toggleServer={toggleServer} openServerUrl={openServerUrl}/>
+        </div>;
+      })}
     </main>
     <UpdateManager checkSignal={updateCheckSignal} onStatus={setUpdateStatus}
       includeExperimental={experimentalBuild || includeExperimental} installedExperimental={experimentalBuild}

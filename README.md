@@ -29,8 +29,9 @@ Early development. **No stable production release yet.** CI validates developmen
 - Desktop project management with separate server and domain configurations
 - PHP and static-site start/stop, status, color-coded searchable live logs (copy/clear), loopback by default, optional LAN binding
 - Local HTTP domain routing through an externally installed Caddy executable
-- Offline Monaco file editor: browsing, multiple tabs, side-by-side code panes, resizable file tree, syntax highlighting, search, replace and guarded saves
-- Default / Universe / Dark / White and additional unified themes (12 options including system default)
+- Offline Monaco workspace with per-project editing sessions, PHP syntax diagnostics, file management, project search and reviewed replacements
+- Editor server controls and a docked PHP log with clickable project source locations
+- Studio Dark, Studio Light and System appearance with side or top navigation
 - Native SQLite database manager: create project databases and tables, preview/insert rows, and import/export consistent `.sqlite3` files
 - Opt-in runtime setup for PHP and Caddy using OS package managers (experimental)
 - Connect to existing local MariaDB/MySQL servers, create databases and preview tables (experimental)

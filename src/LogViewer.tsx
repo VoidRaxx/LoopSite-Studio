@@ -17,7 +17,27 @@ function levelOf(line: string): LogLevel {
   return "plain";
 }
 
-export default function LogViewer({ target, onClose }: { target: LogTarget; onClose: () => void }) {
+type LogProps = {
+  target: LogTarget;
+  onClose: () => void;
+  projectRoot?: string;
+  onOpenLine?: (path: string, line: number) => void;
+};
+
+export function sourceLocation(message: string, root: string) {
+  const match = message.match(/(?: in |^#\d+\s+)((?:[A-Za-z]:[\\/]|\/).+?)(?: on line |:|\()(\d+)(?:\)|\b)/i);
+  if (!match) return null;
+  const prefix = root.replaceAll("\\", "/").replace(/\/+$/, "") + "/";
+  const path = match[1].replaceAll("\\", "/");
+  const windows = /^[a-z]:/i.test(prefix);
+  if (!(windows ? path.toLowerCase().startsWith(prefix.toLowerCase()) : path.startsWith(prefix))) return null;
+  const relative = path.slice(prefix.length);
+  if (relative.split("/").some(part => !part || part === ".." || part === "." || part === ".git")) return null;
+  const line = Number(match[2]);
+  return Number.isSafeInteger(line) && line > 0 ? { path: relative, line } : null;
+}
+
+export default function LogViewer({ target, onClose, projectRoot, onOpenLine }: LogProps) {
   const [raw, setRaw] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -90,10 +110,10 @@ export default function LogViewer({ target, onClose }: { target: LogTarget; onCl
     }
   }
 
-  return <div className="overlay" onMouseDown={event => {
-    if (event.currentTarget === event.target) onClose();
+  return <div className={onOpenLine ? "editor-console" : "overlay"} onMouseDown={event => {
+    if (!onOpenLine && event.currentTarget === event.target) onClose();
   }}>
-    <section className="log-window" role="dialog" aria-modal="true" aria-label={target.title}>
+    <section className="log-window" role={onOpenLine ? "region" : "dialog"} aria-modal={onOpenLine ? undefined : true} aria-label={target.title}>
       <div className="log-header">
         <div><p className="eyebrow">SERVER-KONSOLE</p><h2>{target.title}</h2>
           <p>Letzte 32 KiB der Protokolldatei · {raw.split(/\r?\n/).filter(Boolean).length} Zeilen</p>
@@ -120,10 +140,11 @@ export default function LogViewer({ target, onClose }: { target: LogTarget; onCl
       }}>
         {lines.map(line => {
           const timestamp = line.text.match(/^\[([^\]]+)\]\s*(.*)$/);
+          const location = projectRoot && sourceLocation(line.text, projectRoot);
           return <div className={"log-line log-" + line.level} key={line.index}>
             <span className="log-index">{line.index + 1}</span>
             {timestamp && <time className="log-time">{timestamp[1]}</time>}
-            <span className="log-message">{timestamp ? timestamp[2] : line.text}</span>
+            <span className="log-message">{timestamp ? timestamp[2] : line.text}{location && onOpenLine && <button className="source-link" onClick={() => onOpenLine(location.path, location.line)}>{location.path}:{location.line}</button>}</span>
           </div>;
         })}
         {lines.length === 0 && <p className="log-empty">

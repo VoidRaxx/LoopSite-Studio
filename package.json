@@ -15,6 +15,7 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "@tauri-apps/plugin-opener": "^2.0.0",
+    "php-parser": "^3.7.0",
     "monaco-editor": "^0.52.2",
     "@monaco-editor/react": "^4.7.0",
     "@tauri-apps/plugin-clipboard-manager": "^2.0.0",

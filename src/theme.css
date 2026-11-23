@@ -259,3 +259,24 @@ a:hover { text-decoration-thickness: 2px; }
 @media (max-width: 640px) {
   .app[data-layout="side"] .project-list { border-right: 0; border-bottom: 1px solid var(--line); border-radius: 10px 10px 0 0; }
 }
+
+.ide-tools, .file-actions, .project-search form {
+  display: flex; flex-wrap: wrap; align-items: end; gap: 8px; margin: 0 0 10px;
+}
+.ide-tools select, .project-search input, .file-create input { padding: 5px 8px; }
+.file-actions, .file-create { padding: 5px 8px; }
+.file-create input { width: 100%; }
+.project-search { background: var(--panel); border: 1px solid var(--line); padding: 12px; }
+.project-search label, .file-create label { display: grid; gap: 5px; }
+.search-results { max-height: 240px; overflow: auto; }
+.search-results .editor-entry { display: block; width: 100%; text-align: left; overflow-wrap: anywhere; }
+.editor-console .log-window { width: 100%; margin-top: 8px; max-height: 45vh; overflow: auto; }
+.editor-console .log-output { min-height: 80px; max-height: 24vh; }
+.source-link { background: transparent; color: var(--accent); border: 0; text-decoration: underline; margin-left: 8px; }
+.editor-page:has(.editor-console) .editor-layout { height: max(320px, 50vh); min-height: 320px; }
+.file-entry-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+.file-entry-row .editor-entry { width: 100%; }
+.replace-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.search-results del, .search-results ins { display: block; white-space: pre-wrap; overflow-wrap: anywhere; }
+.search-results del { color: var(--danger); }
+.search-results ins { color: var(--accent); }
