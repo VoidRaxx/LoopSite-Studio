@@ -23,3 +23,22 @@ To run the desktop application from source:
 - Install Rust, Node.js, and Tauri's OS-specific native prerequisites.
 - Run npm install, then npm run tauri dev.
 - To produce a native package, use npm run tauri build after tests pass.
+
+
+## Language assistance
+
+| Files | Live checks and suggestions |
+| --- | --- |
+| HTML, CSS, SCSS, LESS | HTML grammar checks and web-language completions; CSS-family validation and property/value suggestions. |
+| JS, JSX, TS, TSX | Monaco JavaScript/TypeScript services. JSX is enabled and tag/attribute colors apply in JSX/TSX files. TypeScript includes type diagnostics; JavaScript uses syntax diagnostics. |
+| PHP, PHTML | Local syntax diagnostics, symbols, snippets and file-aware function navigation as described above. |
+| JSON | Strict JSON syntax checks, Monaco completions and object/array snippets. |
+| Python, Rust | Grammar diagnostics and language snippets. External interpreter/compiler and project-level type checks are separate. |
+| XML, SVG, XHTML | XML well-formedness checks and markup snippets. |
+| YAML | Multi-document YAML parsing and mapping/list snippets. |
+| SQL | Advisory syntax checks against SQLite and MariaDB parser grammars and SQL snippets. Database schemas are not consulted. |
+| Markdown, INI | Structural hints for open code fences or malformed INI sections/quoted settings, plus snippets. |
+
+Use **Problems** beneath the active editor to jump to a reported line and column. Press Ctrl+Space for suggestions. Supplementary parsers load locally on demand. Their checks start after a 350 ms editing pause, coalesce pending versions and discard stale results. Above 524,288 UTF-16 code units a file opens in plain-text mode; the existing 4 MiB file-opening limit still applies.
+
+Run `npm run test:languages` with Node 22.6+ to check extension aliases and positive/negative parser fixtures.

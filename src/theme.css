@@ -280,3 +280,15 @@ a:hover { text-decoration-thickness: 2px; }
 .search-results del, .search-results ins { display: block; white-space: pre-wrap; overflow-wrap: anywhere; }
 .search-results del { color: var(--danger); }
 .search-results ins { color: var(--accent); }
+.editor-problems { background: var(--sidebar); border-top: 1px solid var(--line); }
+.problem-toggle, .problem-list button { border: 0; background: transparent; color: var(--text); text-align: left; }
+.problem-toggle { display: flex; align-items: center; gap: 7px; padding: 6px 12px; font-size: 12px; }
+.problem-toggle strong { color: var(--accent); }
+.problem-list { overflow: auto; max-height: 145px; padding: 0 10px 5px; }
+.problem-list button { display: block; width: 100%; font-size: 12px; padding: 5px; }
+.problem-list button:hover { background: var(--accent-bg); }
+.problem-list span { color: var(--accent); margin-right: 8px; }
+.problem-list p { margin: 4px; font-size: 12px; color: var(--muted); }
+.monaco-editor .jsx-tag { color: var(--accent); }
+.monaco-editor .jsx-attribute { color: #92c8e8; }
+:root[data-theme="light"] .monaco-editor .jsx-attribute { color: #245378; }

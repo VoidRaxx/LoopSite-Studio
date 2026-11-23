@@ -549,7 +549,7 @@ export default function App() {
       {projects.filter(p => visitedEditors.includes(p.id)).map(project => {
         const visible = panel === "editor" && project.id === selectedId;
         return <div key={project.id} hidden={!visible}>
-          <EditorPanel project={project} projects={projects} theme={activeTheme.id} visible={visible}
+          <EditorPanel project={project} projects={projects} theme={activeTheme.id} visible={visible} language={language}
             onSelectProject={setSelectedId} onDirtyChange={reportDirty}
             running={running} serverBusy={busy} toggleServer={toggleServer} openServerUrl={openServerUrl}/>
         </div>;

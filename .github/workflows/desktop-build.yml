@@ -36,6 +36,7 @@ jobs:
       - name: Verify version and release candidate changelog
         run: node scripts/verify-release-candidate.mjs
       - run: npm install
+      - run: npm run test:languages
       - run: npm run build
       - name: Set up PHP 8.4 for Windows router smoke test
         if: runner.os == 'Windows'

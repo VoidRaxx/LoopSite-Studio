@@ -1,4 +1,5 @@
 import "./php-analysis";
+import "./languages/support";
 import { resolveTheme } from "./themes";
 import { loader } from "@monaco-editor/react";
 import * as monaco from "monaco-editor";

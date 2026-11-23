@@ -1,38 +1,16 @@
 import * as monaco from "monaco-editor";
+import { registerChecks } from "./languages/worker-service";
 import PhpWorker from "./php-analysis.worker?worker";
 
 type SymbolInfo = { name: string; kind: string; line: number; column: number; scope: string };
 type Analysis = { modelId: string; uri: string; version: number; symbols: SymbolInfo[]; errors: { message: string; line: number; column: number }[] };
 const symbols = new WeakMap<monaco.editor.ITextModel, SymbolInfo[]>();
-let worker: Worker | undefined;
-
-function analyzer() {
-  if (worker) return worker;
-  worker = new PhpWorker();
-  worker.onmessage = ({ data }: MessageEvent<Analysis>) => {
-    const model = monaco.editor.getModel(monaco.Uri.parse(data.uri));
-    if (!model || model.id !== data.modelId || model.getVersionId() !== data.version) return;
-    symbols.set(model, data.symbols);
-    monaco.editor.setModelMarkers(model, "loopsite-php", data.errors.map(e => ({
-      severity: monaco.MarkerSeverity.Error, message: e.message, source: "PHP",
-      startLineNumber: e.line, endLineNumber: e.line, startColumn: e.column, endColumn: e.column + 1,
-    })));
-  };
-  return worker;
-}
-
-monaco.editor.onDidCreateModel(model => {
-  if (model.getLanguageId() !== "php") return;
-  let timer: number;
-  const schedule = () => {
-    clearTimeout(timer);
-    timer = window.setTimeout(() => analyzer().postMessage({
-      uri: model.uri.toString(), modelId: model.id, version: model.getVersionId(), text: model.getValue(),
-    }), 300);
-  };
-  const listener = model.onDidChangeContent(schedule);
-  model.onWillDispose(() => { clearTimeout(timer); listener.dispose(); });
-  schedule();
+registerChecks(["php"], "loopsite-php", () => new PhpWorker(), (model, data: Analysis) => {
+  symbols.set(model, data.symbols);
+  monaco.editor.setModelMarkers(model, "loopsite-php", data.errors.map(e => ({
+    severity: monaco.MarkerSeverity.Error, message: e.message, source: "PHP",
+    startLineNumber: e.line, endLineNumber: e.line, startColumn: e.column, endColumn: e.column + 1,
+  })));
 });
 
 function range(symbol: SymbolInfo) {

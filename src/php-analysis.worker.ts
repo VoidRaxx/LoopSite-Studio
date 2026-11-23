@@ -34,6 +34,6 @@ self.onmessage = ({ data }) => {
     }));
     self.postMessage({ uri, modelId, version, symbols, errors });
   } catch {
-    self.postMessage({ uri, modelId, version, symbols: [], errors: [] });
+    self.postMessage({ failed: true });
   }
 };

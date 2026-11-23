@@ -3,6 +3,9 @@ import { invoke } from "@tauri-apps/api/core";
 import MonacoEditor from "@monaco-editor/react";
 import type { Project, Theme } from "./types";
 import "./monaco";
+import { analysisLimit, fileLanguage } from "./languages/files";
+import { translate, type Language } from "./i18n";
+import EditorProblems from "./EditorProblems";
 import { editor, Uri } from "monaco-editor";
 import LogViewer, { type LogTarget } from "./LogViewer";
 import ProjectSearch, { type Replacement } from "./ProjectSearch";
@@ -11,6 +14,7 @@ type FileEntry = { name: string; path: string; isDir: boolean };
 type OpenFile = { content: string; hash: string };
 type Tab = { path: string; content: string; savedContent: string; hash: string };
 type Props = {
+  language: Language;
   project: Project;
   projects: Project[];
   theme: Exclude<Theme, "system">;
@@ -23,23 +27,11 @@ type Props = {
   openServerUrl: (port: number) => Promise<void>;
 };
 
-const language = (path: string) => {
-  const ext = path.split(".").pop()?.toLowerCase();
-  const values: Record<string, string> = {
-    html: "html", htm: "html", php: "php", css: "css", scss: "scss",
-    js: "javascript", mjs: "javascript", cjs: "javascript",
-    ts: "typescript", tsx: "typescript", jsx: "javascript",
-    json: "json", md: "markdown", xml: "xml", sql: "sql",
-    py: "python", rs: "rust", yml: "yaml", yaml: "yaml"
-  };
-  return values[ext ?? ""] ?? "plaintext";
-};
-
 const dirname = (path: string) => path.split("/").slice(0, -1).join("/");
 const basename = (path: string) => path.split("/").pop() ?? path;
 
 export default function EditorPanel({
-  project, projects, theme, onSelectProject, onDirtyChange, visible, running, serverBusy, toggleServer, openServerUrl,
+  project, projects, theme, language, onSelectProject, onDirtyChange, visible, running, serverBusy, toggleServer, openServerUrl,
 }: Props) {
   const [directory, setDirectory] = useState("");
   const [entries, setEntries] = useState<FileEntry[]>([]);
@@ -227,11 +219,11 @@ export default function EditorPanel({
         <MonacoEditor
           path={modelUri(path)}
           keepCurrentModel
-          language={language(path)}
+          language={tab.content.length > analysisLimit ? "plaintext" : fileLanguage(path)}
           value={tab.content}
           theme={`studio-${theme}`}
           options={{
-            automaticLayout: true, minimap: { enabled: false }, fontSize: 12,
+            wordBasedSuggestions: "currentDocument", automaticLayout: true, minimap: { enabled: false }, fontSize: 12,
             lineNumbersMinChars: 3, wordWrap: "on", scrollBeyondLastLine: false,
             tabSize: 2, autoClosingBrackets: "always", smoothScrolling: true,
             padding: { top: 12 },
@@ -256,8 +248,7 @@ export default function EditorPanel({
 
   return <section className="editor-page">
     <div className="page-heading">
-      <div><p className="eyebrow">LOCAL FILE EDITOR</p><h1>Datei-Editor</h1>
-        <p>Mehrere Dateien in Tabs · Zwei Ansichten nebeneinander · Strg+F / Strg+H / Strg+S.</p></div>
+      <h1>{project.name}</h1>
       <label className="editor-project-choice">Projekt
         <select value={project.id} onChange={event => onSelectProject(event.target.value)}>
           {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -378,9 +369,15 @@ export default function EditorPanel({
           <p>Links Dateien öffnen · Tabs wechseln · ⇄ für zwei Dateien nebeneinander.
             Die Trennlinie ist mit der Maus verschiebbar.</p>
         </div>}
+        {visible && activeTab && activeTab.content.length <= analysisLimit && fileLanguage(activeTab.path) !== "plaintext" &&
+          <EditorProblems language={language} key={activeTab.path} uri={modelUri(activeTab.path)} jump={(lineNumber, column) => {
+            const code = mainEditor.current;
+            code?.setPosition({ lineNumber, column }); code?.revealLineInCenter(lineNumber); code?.focus();
+          }}/>}
         <div className="editor-statusbar">
           <span>{activeTab ? activeTab.path : "Keine Datei geöffnet"}</span>
-          <span>{activeTab ? language(activeTab.path).toUpperCase() : "UTF-8"} · {tabs.length} Tabs</span>
+          {activeTab && activeTab.content.length > analysisLimit && <span>{translate(language, "largePlain")}</span>}
+          <span>{activeTab ? fileLanguage(activeTab.path).toUpperCase() : "UTF-8"} · {tabs.length} Tabs</span>
         </div>
       </div>
     </div>
