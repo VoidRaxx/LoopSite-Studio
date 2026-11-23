@@ -26,5 +26,5 @@ export interface Project {
   domains: DomainRoute[];
 }
 
-export type Theme = "system" | "default" | "universe-dark" | "universe-light" | "dark" | "white" | "ocean-dark" | "forest-dark" | "graphite" | "rose-dark" | "sunset-light" | "arctic-light";
+export type Theme = "system" | "dark" | "light";
 export type UiSize = "compact" | "normal" | "large";

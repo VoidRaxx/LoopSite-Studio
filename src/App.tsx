@@ -3,17 +3,22 @@ import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { DomainRoute, Project, Runtime, ServerConfig, Theme } from "./types";
+import type { DomainRoute, Project, Runtime, ServerConfig } from "./types";
 import EditorPanel from "./EditorPanel";
 import DatabasePanel from "./DatabasePanel";
 import MariaPanel from "./MariaPanel";
 import LogViewer, { type LogTarget } from "./LogViewer";
 import RuntimeInstallPanel from "./RuntimeInstallPanel";
 import UpdateManager from "./UpdateManager";
-import { THEME_OPTIONS, resolveTheme } from "./themes";
+import { readTheme, resolveTheme } from "./themes";
 import { languages, translate, type Language } from "./i18n";
 
 type Panel = "projects" | "routing" | "editor" | "php" | "databases" | "setup" | "settings";
+const navigation = [
+  ["projects", "projects", "▦"], ["routing", "routing", "⇄"], ["editor", "editor", "‹›"],
+  ["databases", "databases", "▤"], ["php", "runtimes", "λ"], ["setup", "setup", "↓"],
+  ["settings", "settings", "⚙"],
+] as const;
 type PhpRuntime = { path: string; version: string; source: string };
 type ProxyStatus = { running: boolean; port: number | null; hostnameCount: number };
 type RunningServer = { projectId: string; serverId: string; port: number; lanAccess: boolean };
@@ -71,11 +76,11 @@ export default function App() {
   const [dialog, setDialog] = useState<Dialog>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(true);
-  const [theme, setTheme] = useState<Theme>(() => {
-    const saved = localStorage.getItem("loopsite-theme");
-    if (saved === "hu") return "default";
-    return saved === "system" || THEME_OPTIONS.some(item => item.id === saved) ? saved as Theme : "default";
-  });
+  const [theme, setTheme] = useState(() => readTheme(localStorage.getItem("loopsite-theme")));
+  const [layout, setLayout] = useState<"side" | "top">(() =>
+    localStorage.getItem("loopsite-layout") === "top" ? "top" : "side"
+  );
+  useEffect(() => { localStorage.setItem("loopsite-layout", layout); }, [layout]);
   const [uiSize, setUiSize] = useState<"compact" | "normal" | "large">(() => {
     const saved = localStorage.getItem("loopsite-ui-size");
     return saved === "compact" || saved === "large" ? saved : "normal";
@@ -354,19 +359,18 @@ export default function App() {
     setSelectedId(id);
   }
 
-  return <div className="app">
+  return <div className="app" data-layout={layout}>
     <aside className="sidebar">
-      <div className="brand"><img className="brand-image" src="/loopsite-logo.png" alt="LoopSite Studio" /><div><strong>LoopSite Studio</strong><small>Local Development Environment</small></div></div>
-      <nav>
-        <button className={panel === "projects" ? "nav active" : "nav"} onClick={() => navigate("projects")}>▦ <span>{t("projects")}</span></button>
-        <button className={panel === "routing" ? "nav active" : "nav"} onClick={() => navigate("routing")}>◉ <span>{t("routing")}</span></button>
-        <button className={panel === "editor" ? "nav active" : "nav"} onClick={() => navigate("editor")}>▤ <span>{t("editor")}</span></button>
-        <button className={panel === "databases" ? "nav active" : "nav"} onClick={() => navigate("databases")}>▤ <span>{t("databases")}</span></button>
-        <button className={panel === "php" ? "nav active" : "nav"} onClick={() => navigate("php")}>⌘ <span>{t("runtimes")}</span></button>
-        <button className={panel === "setup" ? "nav active" : "nav"} onClick={() => navigate("setup")}>↓ <span>{t("setup")}</span></button>
-        <button className={panel === "settings" ? "nav active" : "nav"} onClick={() => navigate("settings")}>⚙ <span>{t("settings")}</span></button>
+      <div className="brand"><img className="brand-image" src="/loopsite-logo.png" alt="LoopSite Studio" /><div><strong>LoopSite Studio</strong></div></div>
+      <nav aria-label="LoopSite Studio">
+        {navigation.map(([id, label, icon]) =>
+          <button key={id} title={t(label)} aria-label={t(label)}
+            aria-current={panel === id ? "page" : undefined}
+            className={panel === id ? "nav active" : "nav"} onClick={() => navigate(id)}>
+            <span className="nav-icon" aria-hidden="true">{icon}</span>
+            <span className="nav-label">{t(label)}</span>
+          </button>)}
       </nav>
-      <div className="sidebar-note">{t("tagline")}</div>
       <div className="sidebar-version" title={appVersion}>v{appVersion} · {experimentalBuild ? t("experimental") : t("development")}</div>
     </aside>
     <main className="main">
@@ -408,37 +412,33 @@ export default function App() {
         </div>
       </section> : panel === "editor" ? <EditorPanel project={selected} projects={projects} theme={activeTheme.id}
         onSelectProject={switchEditorProject} onDirtyChange={setEditorDirty}/> : panel === "settings" ? <section>
-        <div className="page-heading"><div><p className="eyebrow">ANPASSUNG</p><h1>Einstellungen</h1><p>Darstellung von LoopSite Studio.</p></div></div>
-        <div className="card settings"><div className="theme-settings-header">
-          <div><h2>Farbschema</h2>
-            <p>Einheitliche Farbpalette in allen Bereichen. Systemstandard übernimmt automatisch den Hell-/Dunkelmodus.</p></div>
-          <span className="theme-current">Aktiv: {theme === "system" ? "Systemstandard" : activeTheme.label}</span>
-        </div>
-          <div className="theme-grid">
-            <button aria-pressed={theme === "system"} className={"theme-select " + (theme === "system" ? "chosen" : "")}
-              onClick={() => setTheme("system")}>
-              <span className="theme-preview theme-preview-system" aria-hidden="true">
-                <i className="theme-preview-bar"/><i className="theme-preview-card"/><i className="theme-preview-accent"/>
-              </span>
-              <strong>Systemstandard</strong><small>Automatisch · Hell/Dunkel</small>
-            </button>
-            {THEME_OPTIONS.map(item => <button key={item.id}
-              aria-pressed={theme === item.id} className={"theme-select " + (theme === item.id ? "chosen" : "")}
-              onClick={() => setTheme(item.id)}>
-              <span className="theme-preview" aria-hidden="true"
-                style={{
-                  background: item.palette.bg,
-                  color: item.palette.text,
-                  borderColor: item.palette.line,
-                  ["--preview-sidebar" as string]: item.palette.sidebar,
-                  ["--preview-panel" as string]: item.palette.panel,
-                  ["--preview-accent" as string]: item.palette.accent,
-                }}>
-                <i className="theme-preview-bar"/><i className="theme-preview-card"/><i className="theme-preview-accent"/>
-              </span>
-              <strong>{item.label}</strong><small>{item.description}</small>
-            </button>)}
-          </div>
+        <div className="page-heading"><h1>{t("settings")}</h1></div>
+        <div className="card settings">
+          <h2>{t("appearance")}</h2>
+          <fieldset className="preference"><legend>{t("layout")}</legend>
+            <div className="layout-picker">
+              {(["side", "top"] as const).map(option =>
+                <button key={option} className="layout-option" aria-pressed={option === layout}
+                  onClick={() => setLayout(option)}>
+                  <span aria-hidden="true" className={`layout-sketch sketch-${option}`}><i/><b/><em/></span>
+                  {t(option)}
+                </button>)}
+            </div>
+          </fieldset>
+          <fieldset className="preference"><legend>{t("mode")}</legend>
+            <div className="choice-row">
+              {(["system", "dark", "light"] as const).map(mode =>
+                <button key={mode} aria-pressed={theme === mode} onClick={() => setTheme(mode)}>
+                  <i className={`mode-dot dot-${mode}`} aria-hidden="true"/>{t(mode)}
+                </button>)}
+            </div>
+          </fieldset>
+          <fieldset className="preference"><legend>{t("size")}</legend>
+            <div className="choice-row">
+              {(["compact", "normal", "large"] as const).map(size =>
+                <button key={size} aria-pressed={uiSize === size} onClick={() => setUiSize(size)}>{t(size)}</button>)}
+            </div>
+          </fieldset>
           <div className="ui-size-settings">
             <h3>{t("language")}</h3><p>{t("languageHint")}</p>
             <label className="language-select-label">{t("language")}
@@ -456,29 +456,12 @@ export default function App() {
               {t("ignoreExperiments")}
             </label>
             <p>{t("ignoreHint")}</p>
-          </div>
-          <div className="ui-size-settings">
-            <h3>Updates</h3>
-            <p>Beim Programmstart wird automatisch nach veröffentlichten Updates gesucht. Vor einer
-              Installation werden die Changenotes angezeigt. Du entscheidest zwischen
-              Update, Later und Skip Update.</p>
             <div className="update-settings">
               <span role="status">{updateStatus}</span>
               <button className="secondary" type="button"
                 onClick={() => setUpdateCheckSignal(value => value + 1)}>
-                Jetzt nach Updates suchen
+                {t("checkUpdates")}
               </button>
-            </div>
-          </div>
-          <div className="ui-size-settings">
-            <h3>UI-Größe</h3>
-            <p>Skaliert sämtliche Bedienelemente und Texte. Die Einstellung wird gespeichert.</p>
-            <div className="ui-size-options" role="group" aria-label="Größe der Benutzeroberfläche">
-              {(["compact","normal","large"] as const).map(size =>
-                <button key={size} className={uiSize === size ? "secondary selected" : "secondary"}
-                  aria-pressed={uiSize === size} onClick={() => setUiSize(size)}>
-                  {size === "compact" ? "Compact" : size === "normal" ? "Normal" : "Large"}
-                </button>)}
             </div>
           </div>
         </div>
@@ -526,7 +509,10 @@ export default function App() {
             {busy && projects.length === 0 ? <div className="empty">Konfiguration wird geladen …</div> :
             !selected ? <div className="empty"><h2>Dein erstes Projekt</h2><p>Wähle einen Ordner und lege ein Projekt an. Danach kannst du mehrere Server und Domains hinzufügen.</p><button className="primary" onClick={openProject}>Projekt erstellen</button></div> :
             <>
-              <div className="detail-header"><div><p className="eyebrow">PROJEKT</p><h2>{selected.name}</h2><code title={selected.rootPath}>{selected.rootPath}</code></div><button className="subtle danger" onClick={() => void deleteProject(selected)} disabled={busy}>Projekt entfernen</button></div>
+              <div className="detail-header"><div><p className="eyebrow">PROJEKT</p><h2>{selected.name}</h2><code title={selected.rootPath}>{selected.rootPath}</code></div><div className="project-actions">
+                <button className="primary" onClick={() => navigate("editor")}>{t("openEditor")}</button>
+                <button className="subtle danger" onClick={() => void deleteProject(selected)} disabled={busy}>Projekt entfernen</button>
+              </div></div>
               <div className="section-head"><div><h3>Server</h3><p>Unabhängige Prozesse innerhalb dieses Projekts.</p></div><button className="secondary" onClick={openServer} disabled={busy}>+ Server</button></div>
               {selected.servers.length === 0 && <div className="empty-section">Noch keine Server konfiguriert.</div>}
               {selected.servers.map(s => <article className="item-card" key={s.id}>

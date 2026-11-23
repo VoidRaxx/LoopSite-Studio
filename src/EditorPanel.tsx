@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import MonacoEditor from "@monaco-editor/react";
 import type { Project, Theme } from "./types";
-import { isLightTheme } from "./themes";
 import "./monaco";
 
 type FileEntry = { name: string; path: string; isDir: boolean };
@@ -11,7 +10,7 @@ type Tab = { path: string; content: string; savedContent: string; hash: string }
 type Props = {
   project: Project | null;
   projects: Project[];
-  theme: Theme;
+  theme: Exclude<Theme, "system">;
   onSelectProject: (projectId: string) => void;
   onDirtyChange: (dirty: boolean) => void;
 };
@@ -144,7 +143,7 @@ export default function EditorPanel({
           path={"file:///" + projectId + "/" + path}
           language={language(path)}
           value={tab.content}
-          theme={isLightTheme(theme) ? "vs" : "vs-dark"}
+          theme={`studio-${theme}`}
           options={{
             automaticLayout: true, minimap: { enabled: false }, fontSize: 12,
             lineNumbersMinChars: 3, wordWrap: "on", scrollBeyondLastLine: false,

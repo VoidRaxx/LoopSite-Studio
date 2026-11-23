@@ -18,9 +18,7 @@ After connecting, create databases and basic tables (automatic numeric \`id\`, u
 
 ## Appearance
 
-Selectable themes: **Systemstandard** (follows OS dark/light), **Default**, **Universe Dark**, **Universe Light**, **Dark** and **White**. The former \`hu\` theme preference migrates to \`default\`. The old HybrideUniverse name is no longer presented in the app's theme picker; this is a LoopSite Studio theme and uses only the LoopSite logo.
-
-Three UI scales: **Compact**, **Normal** and **Large**. Preferences are stored locally. The editor's Monaco light/dark mode also follows the chosen palette.
+See [Workspace appearance](themes-and-appearance.md) for color, size and layout preferences.
 
 ## Tests / limitations
 

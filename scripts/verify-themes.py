@@ -13,11 +13,11 @@ required = {
     "accent", "accentBg", "glass", "danger", "onAccent",
 }
 pattern = re.compile(
-    r'id:"(?P<name>[^"]+)",\s*label:"[^"]+",.*?'
-    r'palette:\{(?P<palette>[^}]+)\}',
+    r'id:\s*"(?P<name>[^"]+)",.*?'
+    r'palette:\s*\{(?P<palette>[^}]+)\}',
     re.DOTALL,
 )
-colors = re.compile(r'(\w+):"([^"]+)"')
+colors = re.compile(r'(\w+):\s*"([^"]+)"')
 
 
 def luminance(value: str) -> float:
@@ -48,7 +48,7 @@ for match in pattern.finditer(source):
         assert value >= 4.5, f"{name}: {label} contrast {value:.2f} is below 4.5"
     palettes.append(name)
 
-assert len(palettes) >= 11, f"Expected at least 11 fixed palettes, found {len(palettes)}"
+assert set(palettes) == {"light", "dark"}, f"Unexpected palettes: {palettes}"
 assert len(set(palettes)) == len(palettes), "Duplicate theme identifiers detected"
 assert "system" not in palettes, "System theme must derive from the light/dark palettes"
 print(f"Theme checks OK: {len(palettes)} consistent palettes with contrast >= 4.5")
