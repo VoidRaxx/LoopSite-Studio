@@ -1,3 +1,4 @@
+import { resolveTheme } from "./themes";
 import { loader } from "@monaco-editor/react";
 import * as monaco from "monaco-editor";
 import editorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
@@ -16,4 +17,21 @@ self.MonacoEnvironment = {
     return new editorWorker();
   },
 };
+for (const mode of ["dark", "light"] as const) {
+  const { palette } = resolveTheme(mode, mode === "dark");
+  monaco.editor.defineTheme(`studio-${mode}`, {
+    base: mode === "dark" ? "vs-dark" : "vs",
+    inherit: true,
+    rules: [],
+    colors: {
+      "editor.background": palette.bg,
+      "editor.foreground": palette.text,
+      "editorCursor.foreground": palette.accent,
+      "editor.lineHighlightBackground": palette.panel,
+      "editorLineNumber.foreground": palette.muted,
+      "editor.selectionBackground": palette.accent + "55",
+      "editorWidget.background": palette.panel,
+    },
+  });
+}
 loader.config({ monaco });
