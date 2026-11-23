@@ -45,7 +45,7 @@ fn checked_parts(path: &str, allow_root: bool) -> Result<Vec<&str>, String> {
         || path.contains('\\')
         || path.contains('\0')
         || path.contains(':')
-        || path.split('/').any(|s| s.is_empty() || s == "." || s == ".." || s == ".git")
+        || path.split('/').any(|s| s.is_empty() || s == "." || s == ".." || s.eq_ignore_ascii_case(".git"))
     {
         return Err("Ungültiger Projektpfad.".into());
     }
@@ -63,7 +63,7 @@ fn checked_path(root: &Path, relative: &str, allow_root: bool) -> Result<PathBuf
         return Err("Zugriff außerhalb des Projektordners verweigert.".into());
     }
     if canonical.strip_prefix(root).map_err(|e| e.to_string())?
-        .components().any(|c| c.as_os_str() == ".git") {
+        .components().any(|c| c.as_os_str().to_string_lossy().eq_ignore_ascii_case(".git")) {
         return Err("Git-Verwaltungsdateien sind geschützt.".into());
     }
     Ok(canonical)
@@ -114,7 +114,7 @@ pub fn list_project_directory(
         // Hide out-of-project symlink targets and broken links.
         let real = match entry.path().canonicalize() {
             Ok(p) if p.starts_with(&root) &&
-                !p.strip_prefix(&root).is_ok_and(|r| r.components().any(|c| c.as_os_str() == ".git")) => p,
+                !p.strip_prefix(&root).is_ok_and(|r| r.components().any(|c| c.as_os_str().to_string_lossy().eq_ignore_ascii_case(".git"))) => p,
             _ => continue,
         };
         files.push(FileEntry {
@@ -188,6 +188,145 @@ pub fn save_project_file(
     checked_save(&file, &content, &expected_hash)
 }
 
+fn valid_name(name: &str) -> bool {
+    let stem = name.split('.').next().unwrap_or("").to_ascii_uppercase();
+    checked_parts(name, false).is_ok_and(|parts| parts.len() == 1)
+        && !name.trim().is_empty() && !name.ends_with([' ', '.'])
+        && !name.eq_ignore_ascii_case(".git")
+        && !name.chars().any(|c| c.is_control() || "<>\"|?*".contains(c))
+        && !matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$")
+        && !(stem.len() == 4 && (stem.starts_with("COM") || stem.starts_with("LPT"))
+            && stem.as_bytes()[3].is_ascii_digit())
+}
+
+// Both APIs fail atomically if the destination already exists.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn move_new(from: &Path, to: &Path) -> std::io::Result<()> {
+    use rustix::fs::{renameat_with, RenameFlags, CWD};
+    renameat_with(CWD, from, CWD, to, RenameFlags::NOREPLACE).map_err(Into::into)
+}
+
+#[cfg(windows)]
+fn move_new(from: &Path, to: &Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    #[link(name = "kernel32")]
+    extern "system" { fn MoveFileW(from: *const u16, to: *const u16) -> i32; }
+    let from: Vec<_> = from.as_os_str().encode_wide().chain(Some(0)).collect();
+    let to: Vec<_> = to.as_os_str().encode_wide().chain(Some(0)).collect();
+    // Each buffer is NUL-terminated and stays alive throughout the call.
+    if unsafe { MoveFileW(from.as_ptr(), to.as_ptr()) } == 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn move_project_entry(app: AppHandle, project_id: String, path: String, destination: String) -> Result<(), String> {
+    let root = project_root(app, &project_id)?;
+    let parts = checked_parts(&destination, false)?;
+    if !parts.iter().all(|s| valid_name(s)) { return Err("Ungültiger Zielpfad.".into()); }
+    checked_path(&root, &path, false)?;
+    let (parent, name) = path.rsplit_once('/').unwrap_or(("", path.as_str()));
+    let source = checked_path(&root, parent, true)?.join(name);
+    let (parent, name) = destination.rsplit_once('/').unwrap_or(("", destination.as_str()));
+    let destination = checked_path(&root, parent, true)?.join(name);
+    move_new(&source, &destination).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn create_project_entry(
+    app: AppHandle, project_id: String, directory: String, name: String, folder: bool,
+) -> Result<String, String> {
+    let root = project_root(app, &project_id)?;
+    if !valid_name(&name) {
+        return Err("Bitte einen einzelnen Namen eingeben.".into());
+    }
+    let parent = checked_path(&root, &directory, true)?;
+    let target = parent.join(&name);
+    if folder {
+        fs::create_dir(target).map_err(|err| err.to_string())?;
+    } else {
+        OpenOptions::new().write(true).create_new(true).open(target).map_err(|err| err.to_string())?;
+    }
+    Ok(if directory.is_empty() { name } else { format!("{directory}/{name}") })
+}
+
+#[derive(Serialize)]
+pub struct SearchHit {
+    path: String,
+    line: usize,
+    preview: String,
+}
+
+#[derive(Serialize)]
+pub struct SearchResults {
+    hits: Vec<SearchHit>,
+    limited: bool,
+}
+
+fn search(root: &Path, query: &str, filenames: bool) -> Result<SearchResults, String> {
+    if query.is_empty() || query.len() > 512 {
+        return Err("Suchbegriff muss zwischen 1 und 512 Bytes lang sein.".into());
+    }
+    let needle = query.to_lowercase();
+    let mut pending = vec![root.to_path_buf()];
+    let mut hits = Vec::new();
+    let mut visited = 0;
+    let mut bytes_left = 128 * 1024 * 1024_u64;
+    while let Some(directory) = pending.pop() {
+        for entry in fs::read_dir(directory).map_err(|e| e.to_string())? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            visited += 1;
+            if visited > 25_000 {
+                return Ok(SearchResults { hits, limited: true });
+            }
+            let name = entry.file_name();
+            let file_type = entry.file_type().map_err(|e| e.to_string())?;
+            let full = entry.path();
+            let relative = full.strip_prefix(root).map_err(|e| e.to_string())?.to_string_lossy()
+                .replace(std::path::MAIN_SEPARATOR, "/");
+            if checked_parts(&relative, false).is_err() || file_type.is_symlink() {
+                continue;
+            }
+            if file_type.is_dir() {
+                if !matches!(name.to_str(), Some("node_modules" | "vendor" | "target" | "dist")) {
+                    pending.push(full);
+                }
+            } else if file_type.is_file() {
+                if filenames {
+                    if relative.to_lowercase().contains(&needle) {
+                        hits.push(SearchHit { path: relative, line: 1, preview: String::new() });
+                    }
+                } else {
+                    let len = entry.metadata().map_err(|e| e.to_string())?.len();
+                    if len > MAX_TEXT_BYTES { continue; }
+                    if len > bytes_left { return Ok(SearchResults { hits, limited: true }); }
+                    bytes_left -= len;
+                    let path = checked_path(root, &relative, false)?;
+                    let Ok(content) = fs::read_to_string(path) else { continue };
+                    if content.contains('\0') { continue; }
+                    for (index, line) in content.lines().enumerate() {
+                        if line.to_lowercase().contains(&needle) {
+                            hits.push(SearchHit { path: relative.clone(), line: index + 1,
+                                preview: line.trim().chars().take(180).collect() });
+                            if hits.len() == 100 { break; }
+                        }
+                    }
+                }
+                if hits.len() == 100 { return Ok(SearchResults { hits, limited: true }); }
+            }
+        }
+    }
+    Ok(SearchResults { hits, limited: false })
+}
+
+#[tauri::command]
+pub async fn search_project(app: AppHandle, project_id: String, query: String, filenames: bool)
+    -> Result<SearchResults, String> {
+    tauri::async_runtime::spawn_blocking(move || search(&project_root(app, &project_id)?, &query, filenames))
+        .await.map_err(|err| err.to_string())?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -201,6 +340,33 @@ mod tests {
         assert!(checked_parts(".git/config", false).is_err());
         assert!(checked_parts("", true).is_ok());
         assert!(checked_parts("src/example.php", false).is_ok());
+    }
+
+    #[test]
+    fn searches_text_and_paths_and_preserves_existing_move_targets() {
+        let root = std::env::temp_dir().join(format!("loopsite-ide-test-{}", std::process::id()));
+        fs::create_dir_all(root.join(".git")).unwrap();
+        fs::write(root.join(".git/config"), "hello").unwrap();
+        fs::write(root.join("demo.php"), "first\nHELLO world").unwrap();
+        fs::write(root.join("binary.bin"), b"hello\0").unwrap();
+        let root = root.canonicalize().unwrap();
+        let result = search(&root, "hello", false).unwrap();
+        assert_eq!(result.hits.len(), 1);
+        assert_eq!(result.hits[0].line, 2);
+        assert_eq!(search(&root, "DEMO", true).unwrap().hits[0].path, "demo.php");
+        assert!(move_new(&root.join("demo.php"), &root.join("binary.bin")).is_err());
+        assert_eq!(fs::read(root.join("binary.bin")).unwrap(), b"hello\0");
+        move_new(&root.join("demo.php"), &root.join("renamed.php")).unwrap();
+        assert!(root.join("renamed.php").is_file());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn requires_portable_single_component_names() {
+        for name in ["../test", ".GIT", "NUL.txt", "file.", "x:y", "a/b"] {
+            assert!(!valid_name(name));
+        }
+        assert!(valid_name("mein projekt.php"));
     }
 
     #[test]

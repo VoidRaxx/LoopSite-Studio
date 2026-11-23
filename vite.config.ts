@@ -2,7 +2,10 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
 export default defineConfig({
+  // The PHP lexer uses this flag to select 64-bit PHP integer limits.
+  define: { "process.arch": JSON.stringify("x64") },
   plugins: [react()],
+  worker: { format: "es" },
   clearScreen: false,
   server: {
     port: 1420,
