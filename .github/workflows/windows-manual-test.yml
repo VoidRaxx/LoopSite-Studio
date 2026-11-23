@@ -48,3 +48,27 @@ jobs:
           path: src-tauri/target/release/bundle/nsis/*-setup.exe
           if-no-files-found: error
           retention-days: 3
+      - name: Build Windows portable executable
+        run: npx tauri build --no-bundle --config src-tauri/tauri.portable.conf.json
+        env:
+          LOOPSITE_PORTABLE: '1'
+          CARGO_BUILD_JOBS: '2'
+          CARGO_INCREMENTAL: '0'
+      - name: Package portable Windows ZIP
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = 'src-tauri/target/release/loopsite-studio.exe'
+          if (-not (Test-Path $exe)) { throw 'Missing portable Windows executable.' }
+          New-Item -ItemType Directory -Force -Path 'portable/portable-data' | Out-Null
+          Copy-Item $exe 'portable/LoopSite-Studio.exe'
+          Set-Content -Path 'portable/README.txt' -Value 'Portable version: keep portable-data beside LoopSite-Studio.exe. No installation required.'
+          Compress-Archive -Path 'portable/*' -DestinationPath 'LoopSite-Studio-Windows-Portable.zip' -Force
+          if ((Get-Item 'LoopSite-Studio-Windows-Portable.zip').Length -lt 1000000) { throw 'Portable ZIP is unexpectedly small.' }
+      - name: Upload Windows portable test ZIP (not a GitHub Release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: LoopSite-Studio-Windows-Experimental-Portable
+          path: LoopSite-Studio-Windows-Portable.zip
+          if-no-files-found: error
+          retention-days: 3
